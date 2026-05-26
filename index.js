@@ -764,6 +764,670 @@ document.getElementById('formTreino').addEventListener('submit', function(e) {
 </html>`;
 }
 
+// ── METAS CONFIG ─────────────────────────────────────────────────────────────
+const METAS = {
+  treinos_semana:  { label: 'Treinos por semana',        valor: 5,   unidade: 'treinos', cor: '#7C3AED' },
+  km_corrida:      { label: 'Maior corrida (meta 10km)', valor: 10,  unidade: 'km',      cor: '#10B981' },
+  streak:          { label: 'Sequência de dias ativos',  valor: 20,  unidade: 'dias',    cor: '#F59E0B' },
+  minutos_mes:     { label: 'Minutos de treino/mês',     valor: 600, unidade: 'min',     cor: '#0EA5E9' },
+};
+
+// ── ROTA /metas ───────────────────────────────────────────────────────────────
+app.get('/metas', async (req, res) => {
+  try {
+    const hoje = new Date();
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth();
+
+    // 1. Treinos por semana — últimas 12 semanas
+    const { rows: treinosPorSemana } = await pool.query(`
+      SELECT
+        DATE_TRUNC('week', data)::date as semana,
+        COUNT(*) FILTER (WHERE concluido = true) as feitos,
+        COUNT(*) as total
+      FROM treinos
+      WHERE data >= CURRENT_DATE - INTERVAL '84 days'
+      GROUP BY semana ORDER BY semana ASC
+    `);
+
+    // 2. Maior corrida registrada (para meta 10km)
+    const { rows: maiorCorrida } = await pool.query(`
+      SELECT COALESCE(MAX(distancia_km), 0) as max_km,
+             COALESCE(AVG(distancia_km), 0) as avg_km
+      FROM treinos
+      WHERE tipo ILIKE '%corrida%' AND concluido = true AND distancia_km IS NOT NULL
+    `);
+
+    // Histórico de corridas (maior por semana)
+    const { rows: corridasPorSemana } = await pool.query(`
+      SELECT DATE_TRUNC('week', data)::date as semana,
+             MAX(distancia_km) as max_km,
+             SUM(distancia_km) as total_km,
+             COUNT(*) as qtd
+      FROM treinos
+      WHERE tipo ILIKE '%corrida%' AND concluido = true AND distancia_km IS NOT NULL
+      GROUP BY semana ORDER BY semana ASC
+    `);
+
+    // 3. Streak atual
+    const { rows: streakRows } = await pool.query(`
+      SELECT COUNT(DISTINCT data) as streak FROM treinos
+      WHERE concluido = true AND data >= CURRENT_DATE - INTERVAL '30 days'
+    `);
+
+    // Histórico streak por mês (dias ativos/mês)
+    const { rows: streakPorMes } = await pool.query(`
+      SELECT DATE_TRUNC('month', data)::date as mes,
+             COUNT(DISTINCT data) as dias_ativos
+      FROM treinos
+      WHERE concluido = true
+      GROUP BY mes ORDER BY mes ASC
+      LIMIT 12
+    `);
+
+    // 4. Minutos por mês — últimos 6 meses
+    const { rows: minutosPorMes } = await pool.query(`
+      SELECT DATE_TRUNC('month', data)::date as mes,
+             COALESCE(SUM(duracao_min), 0) as minutos
+      FROM treinos
+      WHERE concluido = true AND data >= CURRENT_DATE - INTERVAL '180 days'
+      GROUP BY mes ORDER BY mes ASC
+    `);
+
+    // Minutos do mês atual
+    const inicioMes = new Date(anoAtual, mesAtual, 1).toISOString().slice(0,10);
+    const { rows: minutosMesAtual } = await pool.query(`
+      SELECT COALESCE(SUM(duracao_min), 0) as minutos
+      FROM treinos WHERE concluido = true AND data >= $1
+    `, [inicioMes]);
+
+    // Heatmap — últimos 6 meses dia a dia
+    const inicioHeatmap = new Date(anoAtual, mesAtual - 5, 1).toISOString().slice(0,10);
+    const { rows: heatmapRows } = await pool.query(`
+      SELECT data::text, COUNT(*) FILTER (WHERE concluido = true) as feitos
+      FROM treinos
+      WHERE data >= $1
+      GROUP BY data ORDER BY data ASC
+    `, [inicioHeatmap]);
+
+    // Plano corrida — semanas concluídas
+    const { rows: planoRows } = await pool.query(`
+      SELECT COUNT(DISTINCT DATE_TRUNC('week', data)) as semanas
+      FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido = true
+    `);
+
+    const stats = {
+      treinosPorSemana,
+      maiorKm: parseFloat(maiorCorrida[0]?.max_km || 0),
+      avgKm: parseFloat(maiorCorrida[0]?.avg_km || 0),
+      corridasPorSemana,
+      streakAtual: parseInt(streakRows[0]?.streak || 0),
+      streakPorMes,
+      minutosMesAtual: parseInt(minutosMesAtual[0]?.minutos || 0),
+      minutosPorMes,
+      heatmapRows,
+      semanasCorrida: parseInt(planoRows[0]?.semanas || 0),
+      // semana atual
+      treinosSemanaAtual: treinosPorSemana.length > 0
+        ? parseInt(treinosPorSemana[treinosPorSemana.length - 1]?.feitos || 0)
+        : 0,
+    };
+
+    res.send(renderMetas(stats));
+  } catch(e) {
+    console.error(e);
+    res.status(500).send('<pre style="padding:2rem">'+e.message+'</pre>');
+  }
+});
+
+function renderMetas(s) {
+  const MESES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+  // Dados para Chart.js
+  const semanas12 = s.treinosPorSemana.slice(-12);
+  const labelsSemanaTreinos = semanas12.map(r => {
+    const d = new Date(r.semana); return `${d.getDate()}/${d.getMonth()+1}`;
+  });
+  const valoresSemanaTreinos = semanas12.map(r => parseInt(r.feitos));
+
+  const labelsCorrida = s.corridasPorSemana.slice(-10).map(r => {
+    const d = new Date(r.semana); return `${d.getDate()}/${d.getMonth()+1}`;
+  });
+  const valoresCorrida = s.corridasPorSemana.slice(-10).map(r => parseFloat(r.max_km).toFixed(1));
+
+  const labelsMinutos = s.minutosPorMes.map(r => {
+    const d = new Date(r.mes); return MESES_PT[d.getMonth()];
+  });
+  const valoresMinutos = s.minutosPorMes.map(r => parseInt(r.minutos));
+
+  const labelsStreak = s.streakPorMes.slice(-6).map(r => {
+    const d = new Date(r.mes); return MESES_PT[d.getMonth()];
+  });
+  const valoresStreak = s.streakPorMes.slice(-6).map(r => parseInt(r.dias_ativos));
+
+  // Roscas — progresso
+  const pctTreinos  = Math.min(Math.round((s.treinosSemanaAtual / METAS.treinos_semana.valor) * 100), 100);
+  const pctKm       = Math.min(Math.round((s.maiorKm / METAS.km_corrida.valor) * 100), 100);
+  const pctStreak   = Math.min(Math.round((s.streakAtual / METAS.streak.valor) * 100), 100);
+  const pctMinutos  = Math.min(Math.round((s.minutosMesAtual / METAS.minutos_mes.valor) * 100), 100);
+
+  // Heatmap
+  const heatMap = {};
+  for (const r of s.heatmapRows) heatMap[r.data.slice(0,10)] = parseInt(r.feitos);
+
+  const hoje = new Date();
+  const heatmapCells = [];
+  for (let i = 180; i >= 0; i--) {
+    const d = new Date(hoje); d.setDate(d.getDate() - i);
+    const ds = d.toISOString().slice(0,10);
+    const feitos = heatMap[ds] || 0;
+    heatmapCells.push({ ds, feitos, dow: d.getDay() });
+  }
+
+  // Agrupar heatmap por semana para renderizar em colunas
+  const heatWeeks = [];
+  let week = [];
+  // Preenche offset inicial
+  const firstDow = heatmapCells[0].dow;
+  const offsetInit = firstDow === 0 ? 0 : firstDow;
+  for (let i = 0; i < offsetInit; i++) week.push(null);
+  for (const cell of heatmapCells) {
+    week.push(cell);
+    if (week.length === 7) { heatWeeks.push(week); week = []; }
+  }
+  if (week.length) { while(week.length < 7) week.push(null); heatWeeks.push(week); }
+
+  function heatColor(n) {
+    if (!n) return '#F0F2F8';
+    if (n >= 3) return '#7C3AED';
+    if (n >= 2) return '#A78BFA';
+    return '#DDD6FE';
+  }
+
+  const heatHTML = heatWeeks.map(w =>
+    `<div class="heat-col">${w.map(c => c
+      ? `<div class="heat-cell" style="background:${heatColor(c.feitos)}" title="${c.ds}: ${c.feitos} treino(s)"></div>`
+      : `<div class="heat-cell" style="background:transparent"></div>`
+    ).join('')}</div>`
+  ).join('');
+
+  const DIAS_HEAT = ['D','S','T','Q','Q','S','S'];
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Metas · Renato</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#F0F2F8;--card:#fff;--border:#E8EAF2;--text:#1E2235;--muted:#8A93B2;
+  --purple:#7C3AED;--purple-light:#EDE9FE;--purple-mid:#A78BFA;
+  --blue:#0EA5E9;--blue-light:#E0F2FE;
+  --green:#10B981;--green-light:#D1FAE5;
+  --amber:#F59E0B;--amber-light:#FEF3C7;
+  --red:#EF4444;
+  --r:16px;--shadow:0 2px 12px rgba(30,34,53,0.07);
+}
+body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
+
+/* SIDEBAR */
+.sidebar{width:240px;min-height:100vh;background:var(--card);border-right:1px solid var(--border);padding:28px 0;display:flex;flex-direction:column;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar-logo{padding:0 24px 28px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.sidebar-logo-name{font-family:'Outfit',sans-serif;font-size:20px;font-weight:800;color:var(--text);letter-spacing:-0.02em}
+.sidebar-logo-sub{font-size:11px;color:var(--muted);margin-top:2px;font-weight:500}
+.sidebar-section{padding:8px 24px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--muted);margin-top:8px}
+.sidebar-item{display:flex;align-items:center;gap:10px;padding:10px 24px;font-size:14px;font-weight:500;color:var(--muted);cursor:pointer;transition:all 0.15s;border-left:3px solid transparent;text-decoration:none}
+.sidebar-item:hover{background:#F8F9FF;color:var(--text)}
+.sidebar-item.active{background:var(--purple-light);color:var(--purple);border-left-color:var(--purple);font-weight:700}
+.sidebar-item-icon{font-size:16px;width:20px;text-align:center}
+.sidebar-bottom{margin-top:auto;padding:16px 24px;border-top:1px solid var(--border)}
+.sidebar-user{display:flex;align-items:center;gap:10px}
+.sidebar-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--blue));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;font-family:'Outfit',sans-serif}
+.sidebar-user-name{font-size:13px;font-weight:700;color:var(--text)}
+.sidebar-user-role{font-size:11px;color:var(--muted)}
+
+/* CONTENT */
+.content{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{background:var(--card);border-bottom:1px solid var(--border);padding:16px 32px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10}
+.topbar-left h2{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:var(--text);letter-spacing:-0.02em}
+.topbar-left p{font-size:13px;color:var(--muted);margin-top:1px}
+.topbar-date{font-size:13px;color:var(--muted);font-weight:500;background:var(--bg);padding:8px 14px;border-radius:99px;border:1px solid var(--border)}
+
+.main{padding:28px 32px;flex:1}
+
+/* ROSCAS */
+.roscas-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.rosca-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:22px;box-shadow:var(--shadow);text-align:center}
+.rosca-wrap{position:relative;width:120px;height:120px;margin:0 auto 14px}
+.rosca-wrap canvas{width:120px !important;height:120px !important}
+.rosca-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+.rosca-pct{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:var(--text);line-height:1}
+.rosca-pct-label{font-size:9px;color:var(--muted);font-weight:600}
+.rosca-title{font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px}
+.rosca-sub{font-size:11px;color:var(--muted)}
+.rosca-atual{font-size:20px;font-weight:800;font-family:'Outfit',sans-serif;color:var(--text);margin-bottom:2px}
+.rosca-meta{font-size:11px;color:var(--muted)}
+
+/* GRIDS */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+.grid-big{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:20px}
+
+/* CARD */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:24px;box-shadow:var(--shadow)}
+.card-title{font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;color:var(--text);margin-bottom:18px;display:flex;align-items:center;justify-content:space-between}
+.card-title-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;padding:4px 10px;border-radius:99px}
+.badge-purple{background:var(--purple-light);color:var(--purple)}
+.badge-green{background:var(--green-light);color:#065F46}
+.badge-amber{background:var(--amber-light);color:#92400E}
+.badge-blue{background:var(--blue-light);color:#0369A1}
+
+/* META PROGRESS BAR */
+.meta-bar-item{margin-bottom:16px}
+.meta-bar-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.meta-bar-label{font-size:13px;font-weight:600;color:var(--text)}
+.meta-bar-nums{font-size:12px;color:var(--muted);font-weight:600}
+.meta-bar-nums b{color:var(--text)}
+.meta-bar-track{background:var(--bg);border-radius:99px;height:10px;overflow:hidden}
+.meta-bar-fill{height:100%;border-radius:99px;transition:width 0.8s ease}
+
+/* HEATMAP */
+.heat-section{margin-bottom:20px}
+.heat-wrap{overflow-x:auto;padding-bottom:4px}
+.heat-inner{display:flex;gap:3px;min-width:fit-content}
+.heat-labels{display:flex;gap:3px;margin-bottom:4px}
+.heat-day-labels{display:flex;flex-direction:column;gap:3px;margin-right:4px;padding-top:0}
+.heat-day-label{font-size:8px;color:var(--muted);height:12px;display:flex;align-items:center;font-weight:600}
+.heat-col{display:flex;flex-direction:column;gap:3px}
+.heat-cell{width:12px;height:12px;border-radius:2px;transition:transform 0.1s}
+.heat-cell:hover{transform:scale(1.3)}
+.heat-legenda{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:10px;color:var(--muted);font-weight:600}
+.heat-legenda-cells{display:flex;gap:3px}
+
+/* CHART CONTAINER */
+.chart-wrap{position:relative;height:200px}
+
+/* INSIGHT CARDS */
+.insights-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.insight-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+.insight-icon{font-size:24px;margin-bottom:8px}
+.insight-val{font-family:'Outfit',sans-serif;font-size:24px;font-weight:800;color:var(--text);letter-spacing:-0.02em;line-height:1}
+.insight-label{font-size:11px;color:var(--muted);font-weight:600;margin-top:3px}
+.insight-trend{font-size:11px;margin-top:6px;font-weight:700;padding:3px 8px;border-radius:99px;display:inline-block}
+.trend-up{background:var(--green-light);color:#065F46}
+.trend-down{background:#FEE2E2;color:#991B1B}
+.trend-neutral{background:var(--bg);color:var(--muted)}
+
+@media(max-width:1100px){.roscas-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:860px){.sidebar{display:none}.grid-2,.grid-big{grid-template-columns:1fr}.roscas-grid{grid-template-columns:repeat(2,1fr)}.main{padding:20px 16px}}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-name">Treinos</div>
+    <div class="sidebar-logo-sub">Renato Campos</div>
+  </div>
+  <div class="sidebar-section">Menu</div>
+  <a href="/" class="sidebar-item"><span class="sidebar-item-icon">📊</span>Dashboard</a>
+  <a href="/metas" class="sidebar-item active"><span class="sidebar-item-icon">🎯</span>Metas</a>
+  <div class="sidebar-section">Plano</div>
+  <a href="/" class="sidebar-item"><span class="sidebar-item-icon">💪</span>Academia</a>
+  <a href="/" class="sidebar-item"><span class="sidebar-item-icon">🏃</span>Corrida</a>
+  <a href="/" class="sidebar-item"><span class="sidebar-item-icon">🎾</span>Beach Tennis</a>
+  <div class="sidebar-bottom">
+    <div class="sidebar-user">
+      <div class="sidebar-avatar">RC</div>
+      <div>
+        <div class="sidebar-user-name">Renato</div>
+        <div class="sidebar-user-role">Niterói, RJ</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+  <div class="topbar">
+    <div class="topbar-left">
+      <h2>Minhas Metas</h2>
+      <p>Acompanhe sua evolução e conquistas</p>
+    </div>
+    <div class="topbar-date">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</div>
+  </div>
+
+  <div class="main">
+
+    <!-- ROSCAS DE PROGRESSO -->
+    <div class="roscas-grid">
+      ${[
+        { id:'donut0', pct:pctTreinos,  atual:s.treinosSemanaAtual, meta:5,   unidade:'treinos', label:'Treinos esta semana', cor:'#7C3AED', badge:'badge-purple' },
+        { id:'donut1', pct:pctKm,       atual:s.maiorKm.toFixed(1), meta:'10km', unidade:'km',  label:'Maior corrida',        cor:'#10B981', badge:'badge-green' },
+        { id:'donut2', pct:pctStreak,   atual:s.streakAtual, meta:20,         unidade:'dias',   label:'Streak (30 dias)',     cor:'#F59E0B', badge:'badge-amber' },
+        { id:'donut3', pct:pctMinutos,  atual:s.minutosMesAtual, meta:600,    unidade:'min',    label:'Minutos este mês',     cor:'#0EA5E9', badge:'badge-blue' },
+      ].map(r => `
+      <div class="rosca-card">
+        <div class="rosca-wrap">
+          <canvas id="${r.id}"></canvas>
+          <div class="rosca-center">
+            <div class="rosca-pct">${r.pct}%</div>
+            <div class="rosca-pct-label">da meta</div>
+          </div>
+        </div>
+        <div class="rosca-atual">${r.atual} <span style="font-size:13px;color:var(--muted);font-weight:400">${r.unidade}</span></div>
+        <div class="rosca-meta">meta: ${r.meta} ${r.unidade}</div>
+        <div style="margin-top:8px;font-size:12px;font-weight:600;color:var(--text)">${r.label}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- INSIGHTS -->
+    <div class="insights-grid">
+      <div class="insight-card">
+        <div class="insight-icon">🏆</div>
+        <div class="insight-val">${s.semanasCorrida}/8</div>
+        <div class="insight-label">Semanas do plano de corrida</div>
+        <div class="insight-trend ${s.semanasCorrida >= 8 ? 'trend-up' : 'trend-neutral'}">${s.semanasCorrida >= 8 ? '✓ Concluído!' : `Faltam ${8 - s.semanasCorrida} semanas`}</div>
+      </div>
+      <div class="insight-card">
+        <div class="insight-icon">📈</div>
+        <div class="insight-val">${s.avgKm > 0 ? s.avgKm.toFixed(1) : '—'} km</div>
+        <div class="insight-label">Média por corrida</div>
+        <div class="insight-trend trend-neutral">${s.maiorKm > 0 ? 'Recorde: ' + s.maiorKm.toFixed(1) + 'km' : 'Sem corridas registradas'}</div>
+      </div>
+      <div class="insight-card">
+        <div class="insight-icon">⏱</div>
+        <div class="insight-val">${Math.floor(s.minutosMesAtual / 60)}h${s.minutosMesAtual % 60}min</div>
+        <div class="insight-label">Horas de treino este mês</div>
+        <div class="insight-trend ${s.minutosMesAtual >= 600 ? 'trend-up' : 'trend-neutral'}">${s.minutosMesAtual >= 600 ? '✓ Meta atingida!' : 'Faltam ' + (600 - s.minutosMesAtual) + 'min'}</div>
+      </div>
+    </div>
+
+    <!-- GRÁFICO TREINOS + MINUTOS -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">
+          Treinos por semana
+          <span class="card-title-badge badge-purple">meta: 5/sem</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chartTreinos"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">
+          Minutos de treino/mês
+          <span class="card-title-badge badge-blue">meta: 600min</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chartMinutos"></canvas></div>
+      </div>
+    </div>
+
+    <!-- GRÁFICO CORRIDA + STREAK -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">
+          Evolução da corrida (maior distância/semana)
+          <span class="card-title-badge badge-green">meta: 10km</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chartCorrida"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">
+          Dias ativos por mês
+          <span class="card-title-badge badge-amber">meta: 20 dias</span>
+        </div>
+        <div class="chart-wrap"><canvas id="chartStreak"></canvas></div>
+      </div>
+    </div>
+
+    <!-- HEATMAP -->
+    <div class="card heat-section">
+      <div class="card-title">
+        Atividade dos últimos 6 meses
+        <span class="card-title-badge badge-purple">heatmap</span>
+      </div>
+      <div class="heat-wrap">
+        <div style="display:flex;gap:0;align-items:flex-start">
+          <div class="heat-day-labels">
+            ${DIAS_HEAT.map(d=>`<div class="heat-day-label">${d}</div>`).join('')}
+          </div>
+          <div class="heat-inner">${heatHTML}</div>
+        </div>
+      </div>
+      <div class="heat-legenda">
+        Menos
+        <div class="heat-legenda-cells">
+          ${['#F0F2F8','#DDD6FE','#A78BFA','#7C3AED'].map(c=>
+            `<div style="width:12px;height:12px;border-radius:2px;background:${c}"></div>`
+          ).join('')}
+        </div>
+        Mais
+      </div>
+    </div>
+
+    <!-- BARRAS META DETALHADA -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-title">Progresso das metas</div>
+      ${[
+        { label:'Treinos esta semana', atual:s.treinosSemanaAtual, meta:5,   unidade:'treinos', cor:'#7C3AED' },
+        { label:'Maior corrida (meta: 10km em 1 ano)', atual:parseFloat(s.maiorKm.toFixed(1)), meta:10, unidade:'km', cor:'#10B981' },
+        { label:'Dias ativos (últimos 30 dias)', atual:s.streakAtual, meta:20, unidade:'dias', cor:'#F59E0B' },
+        { label:'Minutos de treino este mês', atual:s.minutosMesAtual, meta:600, unidade:'min', cor:'#0EA5E9' },
+      ].map(m => {
+        const pct = Math.min(Math.round((m.atual / m.meta) * 100), 100);
+        return `
+        <div class="meta-bar-item">
+          <div class="meta-bar-header">
+            <span class="meta-bar-label">${m.label}</span>
+            <span class="meta-bar-nums"><b>${m.atual}</b> / ${m.meta} ${m.unidade} &nbsp;·&nbsp; <b style="color:${m.cor}">${pct}%</b></span>
+          </div>
+          <div class="meta-bar-track">
+            <div class="meta-bar-fill" style="width:${pct}%;background:${m.cor}"></div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+
+  </div>
+</div>
+
+<script>
+Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+Chart.defaults.color = '#8A93B2';
+
+const LABELS_TREINOS = ${JSON.stringify(labelsSemanaTreinos)};
+const DATA_TREINOS   = ${JSON.stringify(valoresSemanaTreinos)};
+const LABELS_CORRIDA = ${JSON.stringify(labelsCorrida)};
+const DATA_CORRIDA   = ${JSON.stringify(valoresCorrida)};
+const LABELS_MIN     = ${JSON.stringify(labelsMinutos)};
+const DATA_MIN       = ${JSON.stringify(valoresMinutos)};
+const LABELS_STREAK  = ${JSON.stringify(labelsStreak)};
+const DATA_STREAK    = ${JSON.stringify(valoresStreak)};
+
+// Roscas
+[
+  {id:'donut0', pct:${pctTreinos},  cor:'#7C3AED'},
+  {id:'donut1', pct:${pctKm},       cor:'#10B981'},
+  {id:'donut2', pct:${pctStreak},   cor:'#F59E0B'},
+  {id:'donut3', pct:${pctMinutos},  cor:'#0EA5E9'},
+].forEach(d => {
+  new Chart(document.getElementById(d.id), {
+    type:'doughnut',
+    data:{
+      datasets:[{
+        data:[d.pct, 100-d.pct],
+        backgroundColor:[d.cor, '#F0F2F8'],
+        borderWidth:0,
+        borderRadius:4,
+      }]
+    },
+    options:{
+      cutout:'72%',
+      plugins:{legend:{display:false},tooltip:{enabled:false}},
+      animation:{duration:900,easing:'easeOutQuart'},
+    }
+  });
+});
+
+// Treinos por semana — barras com linha de meta
+new Chart(document.getElementById('chartTreinos'),{
+  type:'bar',
+  data:{
+    labels: LABELS_TREINOS.length ? LABELS_TREINOS : ['—'],
+    datasets:[
+      {
+        label:'Treinos',
+        data: DATA_TREINOS.length ? DATA_TREINOS : [0],
+        backgroundColor:'#EDE9FE',
+        borderColor:'#7C3AED',
+        borderWidth:2,
+        borderRadius:6,
+      },
+      {
+        label:'Meta (5)',
+        data: (LABELS_TREINOS.length ? LABELS_TREINOS : ['—']).map(()=>5),
+        type:'line',
+        borderColor:'#7C3AED',
+        borderWidth:2,
+        borderDash:[6,4],
+        pointRadius:0,
+        fill:false,
+        tension:0,
+      }
+    ]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      y:{beginAtZero:true,max:7,ticks:{stepSize:1},grid:{color:'#F0F2F8'}},
+      x:{grid:{display:false}}
+    }
+  }
+});
+
+// Evolução da corrida — linha com área + meta 10km
+new Chart(document.getElementById('chartCorrida'),{
+  type:'line',
+  data:{
+    labels: LABELS_CORRIDA.length ? LABELS_CORRIDA : ['—'],
+    datasets:[
+      {
+        label:'Maior km',
+        data: DATA_CORRIDA.length ? DATA_CORRIDA : [0],
+        borderColor:'#10B981',
+        backgroundColor:'rgba(16,185,129,0.1)',
+        borderWidth:2.5,
+        pointBackgroundColor:'#10B981',
+        pointRadius:4,
+        fill:true,
+        tension:0.4,
+      },
+      {
+        label:'Meta (10km)',
+        data:(LABELS_CORRIDA.length ? LABELS_CORRIDA : ['—']).map(()=>10),
+        borderColor:'#10B981',
+        borderWidth:2,
+        borderDash:[6,4],
+        pointRadius:0,
+        fill:false,
+        tension:0,
+      }
+    ]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      y:{beginAtZero:true,max:12,ticks:{callback:v=>v+'km'},grid:{color:'#F0F2F8'}},
+      x:{grid:{display:false}}
+    }
+  }
+});
+
+// Minutos por mês — barras
+new Chart(document.getElementById('chartMinutos'),{
+  type:'bar',
+  data:{
+    labels: LABELS_MIN.length ? LABELS_MIN : ['—'],
+    datasets:[
+      {
+        label:'Minutos',
+        data: DATA_MIN.length ? DATA_MIN : [0],
+        backgroundColor:'#E0F2FE',
+        borderColor:'#0EA5E9',
+        borderWidth:2,
+        borderRadius:6,
+      },
+      {
+        label:'Meta (600)',
+        data:(LABELS_MIN.length ? LABELS_MIN : ['—']).map(()=>600),
+        type:'line',
+        borderColor:'#0EA5E9',
+        borderWidth:2,
+        borderDash:[6,4],
+        pointRadius:0,
+        fill:false,
+      }
+    ]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      y:{beginAtZero:true,ticks:{callback:v=>v+'min'},grid:{color:'#F0F2F8'}},
+      x:{grid:{display:false}}
+    }
+  }
+});
+
+// Streak por mês — linha
+new Chart(document.getElementById('chartStreak'),{
+  type:'line',
+  data:{
+    labels: LABELS_STREAK.length ? LABELS_STREAK : ['—'],
+    datasets:[
+      {
+        label:'Dias ativos',
+        data: DATA_STREAK.length ? DATA_STREAK : [0],
+        borderColor:'#F59E0B',
+        backgroundColor:'rgba(245,158,11,0.1)',
+        borderWidth:2.5,
+        pointBackgroundColor:'#F59E0B',
+        pointRadius:4,
+        fill:true,
+        tension:0.4,
+      },
+      {
+        label:'Meta (20)',
+        data:(LABELS_STREAK.length ? LABELS_STREAK : ['—']).map(()=>20),
+        borderColor:'#F59E0B',
+        borderWidth:2,
+        borderDash:[6,4],
+        pointRadius:0,
+        fill:false,
+      }
+    ]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      y:{beginAtZero:true,max:31,ticks:{stepSize:5},grid:{color:'#F0F2F8'}},
+      x:{grid:{display:false}}
+    }
+  }
+});
+</script>
+</body>
+</html>`;
+}
+
 const PORT = process.env.PORT || 3000;
 initDB().then(() => {
   app.listen(PORT, () => console.log('Dashboard rodando na porta ' + PORT));
