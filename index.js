@@ -893,6 +893,183 @@ app.post('/treino/toggle', async (req, res) => {
   } catch(e){res.status(500).json({erro:e.message});}
 });
 
+// ── ROTA /historico ───────────────────────────────────────────────────────────
+app.get('/historico', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT id, data::text, tipo, concluido, nota, duracao_min, distancia_km
+      FROM treinos ORDER BY data DESC, id DESC LIMIT 100
+    `);
+
+    const editId = req.query.edit ? parseInt(req.query.edit) : null;
+
+    const linhas = rows.map(t => {
+      const ds = t.data.slice(0,10);
+      const dataFmt = new Date(ds+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase();
+      const isFuture = ds > hojeStr();
+      const isEdit = editId === t.id;
+
+      if (isEdit) {
+        return `
+        <tr style="background:rgba(212,254,69,0.06);border-bottom:1px solid rgba(212,254,69,0.2)">
+          <form method="POST" action="/treino/edit" style="display:contents">
+            <input type="hidden" name="id" value="${t.id}">
+            <td style="padding:14px 16px;font-size:11px;color:var(--muted)">
+              <input type="date" name="data" value="${ds}" class="field-input" style="width:150px;font-size:12px;padding:6px 10px">
+            </td>
+            <td style="padding:14px 16px">
+              <select name="tipo" class="field-input" style="font-size:12px;padding:6px 10px">
+                ${['Corrida leve','Academia — sup. A','Academia — sup. B','Academia — inf.','Beach tennis']
+                  .map(op=>`<option value="${op}" ${t.tipo===op?'selected':''}>${op}</option>`).join('')}
+              </select>
+            </td>
+            <td style="padding:14px 16px">
+              <select name="concluido" class="field-input" style="font-size:12px;padding:6px 10px">
+                <option value="true" ${t.concluido?'selected':''}>Feito</option>
+                <option value="false" ${!t.concluido?'selected':''}>Não feito</option>
+              </select>
+            </td>
+            <td style="padding:14px 16px">
+              <input type="number" name="duracao_min" value="${t.duracao_min||''}" placeholder="min" class="field-input" style="width:80px;font-size:12px;padding:6px 10px">
+            </td>
+            <td style="padding:14px 16px">
+              <input type="number" name="distancia_km" value="${t.distancia_km||''}" placeholder="km" step="0.1" class="field-input" style="width:80px;font-size:12px;padding:6px 10px">
+            </td>
+            <td style="padding:14px 16px">
+              <input type="text" name="nota" value="${t.nota||''}" placeholder="nota..." class="field-input" style="font-size:12px;padding:6px 10px">
+            </td>
+            <td style="padding:14px 16px;white-space:nowrap">
+              <button type="submit" style="background:var(--accent);color:#111;border:none;border-radius:5px;padding:7px 14px;font-size:10px;font-weight:800;cursor:pointer;letter-spacing:0.08em;font-family:'Outfit',sans-serif">SALVAR</button>
+              <a href="/historico" style="margin-left:8px;font-size:10px;color:var(--muted);font-weight:700;text-decoration:none;letter-spacing:0.06em">CANCELAR</a>
+            </td>
+          </form>
+        </tr>`;
+      }
+
+      return `
+      <tr style="border-bottom:1px solid var(--border);${isFuture?'opacity:0.5':''}">
+        <td style="padding:14px 16px;font-size:11px;font-weight:700;color:${isFuture?'#EF4444':'var(--muted)'};font-family:'Outfit',sans-serif;letter-spacing:0.06em;white-space:nowrap">
+          ${dataFmt}${isFuture?' <span style="font-size:8px;background:rgba(239,68,68,0.15);color:#EF4444;padding:2px 5px;border-radius:3px;font-family:Outfit,sans-serif">FUTURO</span>':''}
+        </td>
+        <td style="padding:14px 16px;font-size:12px;font-weight:600;color:var(--text)">${t.tipo}</td>
+        <td style="padding:14px 16px">
+          <span style="font-size:9px;font-weight:800;letter-spacing:0.08em;padding:3px 8px;border-radius:3px;font-family:'Outfit',sans-serif;${t.concluido?'background:var(--accent-dim);color:var(--accent)':'background:rgba(255,255,255,0.05);color:var(--muted)'}">${t.concluido?'FEITO':'PENDENTE'}</span>
+        </td>
+        <td style="padding:14px 16px;font-size:11px;color:var(--muted)">${t.duracao_min?t.duracao_min+'min':'—'}</td>
+        <td style="padding:14px 16px;font-size:11px;color:var(--muted)">${t.distancia_km?parseFloat(t.distancia_km).toFixed(1)+'km':'—'}</td>
+        <td style="padding:14px 16px;font-size:11px;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.nota||'—'}</td>
+        <td style="padding:14px 16px;white-space:nowrap">
+          <a href="/historico?edit=${t.id}" style="font-size:10px;font-weight:800;color:var(--muted2);text-decoration:none;letter-spacing:0.08em;font-family:'Outfit',sans-serif;margin-right:12px">EDITAR</a>
+          <form method="POST" action="/treino/delete" style="display:inline" onsubmit="return confirm('Deletar este treino?')">
+            <input type="hidden" name="id" value="${t.id}">
+            <button type="submit" style="background:none;border:none;font-size:10px;font-weight:800;color:#EF4444;cursor:pointer;letter-spacing:0.08em;font-family:'Outfit',sans-serif;padding:0">DELETAR</button>
+          </form>
+        </td>
+      </tr>`;
+    }).join('');
+
+    res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Histórico · Renato</title>
+<style>${SHARED_CSS}
+.field-input{border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--card2);color:var(--text);outline:none;transition:border-color 0.15s}
+.field-input:focus{border-color:var(--accent)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 16px;font-size:9px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);font-family:'Outfit',sans-serif}
+tr:hover td{background:rgba(255,255,255,0.015)}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark"><div class="logo-dot"></div><div class="logo-text">TREINOS</div></div>
+    <div class="logo-sub">Renato Campos</div>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-group">
+      <div class="nav-label">Menu</div>
+      <a href="/" class="nav-item"><span class="nav-icon">DB</span>Dashboard</a>
+      <a href="/metas" class="nav-item"><span class="nav-icon">MT</span>Metas</a>
+      <a href="/historico" class="nav-item active"><span class="nav-icon">HT</span>Histórico</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Atividades</div>
+      <a href="/#semana" class="nav-item"><span class="nav-icon">SM</span>Semana</a>
+      <a href="/#corrida" class="nav-item"><span class="nav-icon">RN</span>Corrida</a>
+      <a href="/#registro" class="nav-item"><span class="nav-icon">+</span>Registrar</a>
+    </div>
+  </div>
+  <div class="sidebar-foot">
+    <div class="user-row">
+      <div class="user-av">RC</div>
+      <div><div class="user-name">Renato</div><div class="user-loc">Niterói, RJ</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="topbar">
+    <div class="topbar-title">Histórico</div>
+    <div class="topbar-date">${new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase()}</div>
+  </div>
+  <div class="main">
+    <div style="margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-end">
+      <div>
+        <div style="font-family:'Outfit',sans-serif;font-size:42px;font-weight:900;color:var(--text);letter-spacing:-0.02em;line-height:1">HISTÓRICO<span style="color:var(--accent)">.</span></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Últimos 100 treinos registrados. Clique em Editar para corrigir ou Deletar para remover.</div>
+      </div>
+      ${rows.some(t=>t.data.slice(0,10)>hojeStr())?`
+      <form method="POST" action="/treino/delete-futuros" onsubmit="return confirm('Deletar todos os treinos com data futura?')">
+        <button type="submit" style="background:rgba(239,68,68,0.12);color:#EF4444;border:1px solid rgba(239,68,68,0.25);border-radius:6px;padding:10px 18px;font-size:10px;font-weight:800;cursor:pointer;letter-spacing:0.1em;font-family:'Outfit',sans-serif">
+          DELETAR TODOS OS FUTUROS
+        </button>
+      </form>`:''}
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
+      <table>
+        <thead><tr>
+          <th>Data</th><th>Treino</th><th>Status</th><th>Duração</th><th>Distância</th><th>Nota</th><th>Ações</th>
+        </tr></thead>
+        <tbody>${linhas||'<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum treino registrado ainda.</td></tr>'}</tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</body></html>`);
+  } catch(e) {
+    console.error(e);
+    res.status(500).send('<pre style="padding:2rem;color:#fff;background:#111">'+e.message+'</pre>');
+  }
+});
+
+app.post('/treino/delete', async (req, res) => {
+  const { id } = req.body;
+  try {
+    await pool.query('DELETE FROM treinos WHERE id=$1', [parseInt(id)]);
+    res.redirect('/historico');
+  } catch(e) { res.status(500).send(e.message); }
+});
+
+app.post('/treino/delete-futuros', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM treinos WHERE data > CURRENT_DATE');
+    res.redirect('/historico');
+  } catch(e) { res.status(500).send(e.message); }
+});
+
+app.post('/treino/edit', async (req, res) => {
+  const { id, data, tipo, concluido, nota, duracao_min, distancia_km } = req.body;
+  try {
+    await pool.query(
+      'UPDATE treinos SET data=$1,tipo=$2,concluido=$3,nota=$4,duracao_min=$5,distancia_km=$6 WHERE id=$7',
+      [data, tipo, concluido==='true', nota||null, duracao_min||null, distancia_km||null, parseInt(id)]
+    );
+    res.redirect('/historico');
+  } catch(e) { res.status(500).send(e.message); }
+});
+
 const PORT = process.env.PORT || 3000;
 initDB().then(() => {
   app.listen(PORT, () => console.log('Dashboard rodando na porta ' + PORT));
