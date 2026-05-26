@@ -392,6 +392,7 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
       <div class="nav-label">Menu</div>
       <a href="/" class="nav-item active"><span class="nav-icon">DB</span>Dashboard</a>
       <a href="/metas" class="nav-item"><span class="nav-icon">MT</span>Metas</a>
+      <a href="/historico" class="nav-item"><span class="nav-icon">HT</span>Histórico</a>
     </div>
     <div class="nav-group">
       <div class="nav-label">Atividades</div>
@@ -711,6 +712,7 @@ app.get('/metas', async (req, res) => {
       <div class="nav-label">Menu</div>
       <a href="/" class="nav-item"><span class="nav-icon">DB</span>Dashboard</a>
       <a href="/metas" class="nav-item active"><span class="nav-icon">MT</span>Metas</a>
+      <a href="/historico" class="nav-item"><span class="nav-icon">HT</span>Histórico</a>
     </div>
     <div class="nav-group">
       <div class="nav-label">Atividades</div>
@@ -772,6 +774,23 @@ app.get('/metas', async (req, res) => {
       </div>
     </div>
 
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:32px;margin-bottom:20px">
+      <div class="section-label">Velocímetro de metas</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        ${[
+          {id:'g0', pct:pctTreinos,  val:m.treinosSemAtual+'', unit:'treinos', label:'SEMANA'},
+          {id:'g1', pct:pctKm,       val:m.maiorKm.toFixed(1), unit:'km',      label:'CORRIDA'},
+          {id:'g2', pct:pctStreakReal,val:streakAtual+'',       unit:'dias',    label:'STREAK'},
+          {id:'g3', pct:pctMin,      val:m.minMes+'',          unit:'min',     label:'MINUTOS'},
+        ].map((g,i)=>`
+        <div style="padding:32px 20px;text-align:center;${i<3?'border-right:1px solid var(--border)':''}">
+          <canvas id="${g.id}" width="180" height="100" style="width:180px;height:100px;max-width:100%"></canvas>
+          <div style="font-family:'Outfit',sans-serif;font-size:32px;font-weight:900;color:${g.pct>=100?'var(--accent)':'var(--text)'};letter-spacing:-0.02em;line-height:1;margin-top:12px">${g.val}<span style="font-size:14px;color:var(--muted2);font-weight:600"> ${g.unit}</span></div>
+          <div style="font-size:9px;font-weight:800;letter-spacing:0.16em;color:var(--muted);margin-top:6px;font-family:'Outfit',sans-serif">${g.label}</div>
+        </div>`).join('')}
+      </div>
+    </div>
+
     <div class="two-col">
       <div class="card">
         <div class="section-label">Treinos por semana <span style="color:var(--accent);margin-left:8px;font-size:9px">META: 5</span></div>
@@ -814,6 +833,67 @@ app.get('/metas', async (req, res) => {
 <script>
 Chart.defaults.font.family="'DM Sans',system-ui,sans-serif";
 Chart.defaults.color='#5A5A6A';
+
+// GAUGES
+function drawGauge(id, pct) {
+  const canvas = document.getElementById(id);
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+
+  const cx = W/2, cy = H - 8;
+  const r = Math.min(W, H*2) * 0.44;
+  const startAngle = Math.PI;
+  const endAngle = 2 * Math.PI;
+  const fillAngle = startAngle + (Math.PI * Math.min(pct,100) / 100);
+
+  // Traços do velocímetro
+  const totalTicks = 40;
+  for(let i=0; i<=totalTicks; i++) {
+    const angle = Math.PI + (Math.PI * i / totalTicks);
+    const tickPct = i / totalTicks * 100;
+    const isLit = tickPct <= pct;
+    const isMajor = i % 5 === 0;
+    const innerR = r + (isMajor ? 10 : 14);
+    const outerR = r + (isMajor ? 22 : 20);
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    ctx.beginPath();
+    ctx.moveTo(cx + innerR*cos, cy + innerR*sin);
+    ctx.lineTo(cx + outerR*cos, cy + outerR*sin);
+    ctx.strokeStyle = isLit ? '#D4FE45' : 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = isMajor ? 2.5 : 1.5;
+    ctx.stroke();
+  }
+
+  // Arco de fundo
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, startAngle, endAngle);
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Arco preenchido
+  if(pct > 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, startAngle, fillAngle);
+    ctx.strokeStyle = pct >= 100 ? '#D4FE45' : 'rgba(212,254,69,0.7)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  // Percentual no centro
+  ctx.font = "700 13px 'Outfit', sans-serif";
+  ctx.fillStyle = pct >= 100 ? '#D4FE45' : 'rgba(255,255,255,0.5)';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(pct) + '%', cx, cy - r * 0.15);
+}
+
+drawGauge('g0', ${pctTreinos});
+drawGauge('g1', ${pctKm});
+drawGauge('g2', ${pctStreakReal});
+drawGauge('g3', ${pctMin});
+
 
 const cfg = {
   responsive:true, maintainAspectRatio:false,
