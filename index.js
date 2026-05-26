@@ -11,8 +11,6 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// ── BANCO DE DADOS ──────────────────────────────────────────────────────────
-
 async function initDB() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS treinos (
@@ -25,14 +23,12 @@ async function initDB() {
       distancia_km NUMERIC(5,2),
       created_at TIMESTAMP DEFAULT NOW()
     );
-
     CREATE TABLE IF NOT EXISTS dicas (
       id SERIAL PRIMARY KEY,
       texto TEXT NOT NULL,
       categoria VARCHAR(50)
     );
   `);
-
   const { rows } = await pool.query('SELECT COUNT(*) FROM dicas');
   if (parseInt(rows[0].count) === 0) {
     const dicas = [
@@ -44,18 +40,18 @@ async function initDB() {
       ['Proteína nas 2h após academia potencializa a recuperação muscular.', 'nutrição'],
       ['Beach tennis é treino completo — cardio, reflexo e equilíbrio ao mesmo tempo.', 'beach'],
       ['Descanso não é preguiça. É parte do plano.', 'recuperação'],
-      ['Correr na praia de manhã antes do almoço é um privilégio. Aproveita.', 'corrida'],
+      ['Correr na praia de manhã é um privilégio. Aproveita cada vez.', 'corrida'],
       ['Ritmo de conversa = ritmo certo. Se não consegue falar, está rápido demais.', 'corrida'],
       ['O treino que você faz consistentemente supera o treino perfeito que você pula.', 'mental'],
-      ['Semana com 5 atividades já é elite. Não precisas de mais, precisas de constância.', 'geral'],
+      ['Semana com 5 atividades já é elite. Constância é tudo.', 'geral'],
       ['Academia de superior duas vezes por semana: deixa 48h entre os treinos.', 'academia'],
       ['Inferior no sábado longe do beach de quarta — joelho agradece.', 'joelho'],
-      ['Cada semana completada do plano de corrida é uma semana que seu joelho ficou mais forte.', 'corrida'],
-      ['Progressão de corrida: tempo primeiro, ritmo depois. Nunca os dois ao mesmo tempo.', 'corrida'],
+      ['Cada semana do plano de corrida é uma semana que seu joelho ficou mais forte.', 'corrida'],
+      ['Progressão de corrida: tempo primeiro, ritmo depois. Nunca os dois juntos.', 'corrida'],
       ['Dor muscular é adaptação. Dor articular é sinal. Aprende a diferença.', 'joelho'],
-      ['Treino de core é proteção de joelho. Abdômen forte = menos sobrecarga na perna.', 'academia'],
-      ['Sábado de academia cedo deixa o fim de semana livre. Melhor das duas.', 'geral'],
-      ['Cada check no calendário é uma prova de que você é o tipo de pessoa que treina.', 'mental'],
+      ['Core forte = joelho protegido. Abdômen forte tira sobrecarga da perna.', 'academia'],
+      ['Sábado de academia cedo deixa o fim de semana livre. Melhor dos dois mundos.', 'geral'],
+      ['Cada check no calendário prova que você é o tipo de pessoa que treina.', 'mental'],
     ];
     for (const [texto, categoria] of dicas) {
       await pool.query('INSERT INTO dicas (texto, categoria) VALUES ($1, $2)', [texto, categoria]);
@@ -64,19 +60,18 @@ async function initDB() {
   console.log('Banco inicializado.');
 }
 
-// ── HELPERS ─────────────────────────────────────────────────────────────────
-
 const ROTINA = {
-  1: { tipo: 'Corrida leve',      icone: '🏃', horario: '17h',  cor: '#2d6a4f' },
-  2: { tipo: 'Academia — sup. A', icone: '💪', horario: '11h',  cor: '#3d405b' },
-  3: { tipo: 'Beach tennis',      icone: '🎾', horario: '20h',  cor: '#8b5e3c' },
-  4: { tipo: 'Academia — sup. B', icone: '💪', horario: '11h',  cor: '#3d405b' },
-  5: { tipo: 'Corrida leve',      icone: '🏃', horario: '10h',  cor: '#2d6a4f' },
-  6: { tipo: 'Academia — inf.',   icone: '🦵', horario: '9h',   cor: '#3d405b' },
-  0: { tipo: 'Descanso',          icone: '😴', horario: '—',    cor: '#aaa'    },
+  1: { tipo: 'Corrida leve',      icone: '🏃', horario: '17h',  label: 'Corrida' },
+  2: { tipo: 'Academia — sup. A', icone: '💪', horario: '11h',  label: 'Academia' },
+  3: { tipo: 'Beach tennis',      icone: '🎾', horario: '20h',  label: 'Beach' },
+  4: { tipo: 'Academia — sup. B', icone: '💪', horario: '11h',  label: 'Academia' },
+  5: { tipo: 'Corrida leve',      icone: '🏃', horario: '10h',  label: 'Corrida' },
+  6: { tipo: 'Academia — inf.',   icone: '🦵', horario: '9h',   label: 'Academia' },
+  0: { tipo: 'Descanso',          icone: '😴', horario: '—',    label: 'Descanso' },
 };
 
 const DIAS_PT = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+const DIAS_SHORT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 function hojeStr() {
@@ -90,62 +85,56 @@ function semanaAtual() {
   seg.setDate(hoje.getDate() - ((dow === 0 ? 7 : dow) - 1));
   const sab = new Date(seg);
   sab.setDate(seg.getDate() + 6);
-  return {
-    inicio: seg.toISOString().slice(0, 10),
-    fim: sab.toISOString().slice(0, 10),
-  };
+  return { inicio: seg.toISOString().slice(0, 10), fim: sab.toISOString().slice(0, 10) };
 }
 
 async function getDicaHoje() {
   const hoje = new Date();
-  const { rows } = await pool.query('SELECT texto, categoria FROM dicas');
+  const { rows } = await pool.query('SELECT texto, categoria FROM dicas ORDER BY id');
   if (!rows.length) return { texto: 'Continue firme.', categoria: 'geral' };
-  const idx = hoje.getDate() % rows.length;
-  return rows[idx];
+  return rows[hoje.getDate() % rows.length];
 }
 
 async function getStats() {
   const semana = semanaAtual();
-
-  const [totalR, semanaR, streakR, corridaR, mesR] = await Promise.all([
+  const [totalR, semanaR, streakR, corridaR] = await Promise.all([
     pool.query('SELECT COUNT(*) FROM treinos WHERE concluido = true'),
     pool.query('SELECT * FROM treinos WHERE data >= $1 AND data <= $2 ORDER BY data ASC', [semana.inicio, semana.fim]),
     pool.query(`
-      SELECT COUNT(*) as dias FROM (
-        SELECT DISTINCT data FROM treinos
-        WHERE concluido = true
-        AND data >= CURRENT_DATE - INTERVAL '30 days'
-        ORDER BY data DESC
-      ) t
+      WITH RECURSIVE seq AS (
+        SELECT CURRENT_DATE as d, 0 as n
+        UNION ALL
+        SELECT (d - INTERVAL '1 day')::date, n+1 FROM seq WHERE n < 60
+      )
+      SELECT COUNT(*) as streak FROM seq
+      WHERE EXISTS (
+        SELECT 1 FROM treinos WHERE data = seq.d AND concluido = true
+      ) AND n <= (
+        SELECT COALESCE(MIN(n), 0) FROM seq s2
+        WHERE NOT EXISTS (
+          SELECT 1 FROM treinos WHERE data = s2.d AND concluido = true
+        ) AND s2.n > 0
+      )
     `),
     pool.query(`
-      SELECT data, SUM(distancia_km) as km
+      SELECT DATE_TRUNC('week', data)::date as semana, SUM(distancia_km) as km
       FROM treinos
       WHERE tipo ILIKE '%corrida%' AND concluido = true AND distancia_km IS NOT NULL
-      GROUP BY data ORDER BY data ASC
-    `),
-    pool.query(`
-      SELECT DATE_TRUNC('month', data) as mes, COUNT(*) as total, SUM(CASE WHEN concluido THEN 1 ELSE 0 END) as feitos
-      FROM treinos
-      GROUP BY mes ORDER BY mes DESC LIMIT 6
+      GROUP BY semana ORDER BY semana ASC
     `),
   ]);
-
   return {
     total: parseInt(totalR.rows[0].count),
     semana: semanaR.rows,
-    streak: parseInt(streakR.rows[0].dias),
+    streak: parseInt(streakR.rows[0].streak) || 0,
     corridas: corridaR.rows,
-    meses: mesR.rows,
   };
 }
 
 async function getCalendarioMes() {
   const hoje = new Date();
-  const ano = hoje.getFullYear();
-  const mes = hoje.getMonth();
-  const inicio = new Date(ano, mes, 1).toISOString().slice(0, 10);
-  const fim = new Date(ano, mes + 1, 0).toISOString().slice(0, 10);
+  const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+  const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().slice(0, 10);
   const { rows } = await pool.query(
     'SELECT data::text, tipo, concluido FROM treinos WHERE data >= $1 AND data <= $2',
     [inicio, fim]
@@ -159,39 +148,26 @@ function proximoTreino() {
     const d = new Date(hoje);
     d.setDate(hoje.getDate() + i);
     const dow = d.getDay();
-    const rotina = ROTINA[dow];
-    if (rotina && rotina.tipo !== 'Descanso') {
-      return {
-        ...rotina,
-        data: d.toISOString().slice(0, 10),
-        dia: DIAS_PT[dow],
-        hoje: i === 0,
-        amanha: i === 1,
-        daqui: i,
-      };
+    const r = ROTINA[dow];
+    if (r && r.tipo !== 'Descanso') {
+      return { ...r, data: d.toISOString().slice(0, 10), dia: DIAS_PT[dow], daqui: i };
     }
   }
   return null;
 }
 
-// ── ROTAS ────────────────────────────────────────────────────────────────────
-
-// GET / — dashboard principal
 app.get('/', async (req, res) => {
   try {
-    const [stats, calendario, dica, proximo] = await Promise.all([
-      getStats(),
-      getCalendarioMes(),
-      getDicaHoje(),
-      Promise.resolve(proximoTreino()),
+    const [stats, calendario, dica] = await Promise.all([
+      getStats(), getCalendarioMes(), getDicaHoje()
     ]);
-
+    const proximo = proximoTreino();
     const hoje = new Date();
     const anoMes = `${MESES_PT[hoje.getMonth()]} ${hoje.getFullYear()}`;
     const diasNoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
     const primeiroDow = new Date(hoje.getFullYear(), hoje.getMonth(), 1).getDay();
+    const primeiroDowSeg = primeiroDow === 0 ? 6 : primeiroDow - 1;
 
-    // Mapa de treinos do mês por data
     const treinosMap = {};
     for (const t of calendario) {
       const d = t.data.slice(0, 10);
@@ -199,12 +175,10 @@ app.get('/', async (req, res) => {
       treinosMap[d].push(t);
     }
 
-    // Semana atual — montar grade seg→dom
     const semana = semanaAtual();
-    const treinos7 = stats.semana;
     const treinosSemMap = {};
-    for (const t of treinos7) {
-      const d = t.data.slice ? t.data.slice(0, 10) : t.data;
+    for (const t of stats.semana) {
+      const d = (t.data.slice ? t.data.slice(0, 10) : t.data);
       treinosSemMap[d] = t;
     }
 
@@ -214,13 +188,11 @@ app.get('/', async (req, res) => {
       d.setDate(d.getDate() + i);
       const ds = d.toISOString().slice(0, 10);
       const dow = d.getDay();
-      const rotina = ROTINA[dow];
       diasSemana.push({
-        data: ds,
-        dow,
-        diaNome: DIAS_PT[dow].slice(0, 3),
+        data: ds, dow,
+        diaNome: DIAS_SHORT[dow],
         dia: d.getDate(),
-        rotina,
+        rotina: ROTINA[dow],
         treino: treinosSemMap[ds] || null,
         hoje: ds === hojeStr(),
       });
@@ -228,759 +200,578 @@ app.get('/', async (req, res) => {
 
     const feitasSemana = diasSemana.filter(d => d.treino?.concluido).length;
     const possiveisSemana = diasSemana.filter(d => d.rotina?.tipo !== 'Descanso').length;
+    const pctSemana = possiveisSemana > 0 ? Math.round((feitasSemana / possiveisSemana) * 100) : 0;
 
-    // Corrida: semanas do plano
-    const kmPorSemana = [];
-    const corridaAgg = {};
-    for (const r of stats.corridas) {
-      const d = new Date(r.data);
-      d.setDate(d.getDate() - ((d.getDay() === 0 ? 7 : d.getDay()) - 1));
-      const key = d.toISOString().slice(0, 10);
-      corridaAgg[key] = (corridaAgg[key] || 0) + parseFloat(r.km || 0);
-    }
-    for (const [k, v] of Object.entries(corridaAgg).sort()) {
-      kmPorSemana.push({ semana: k, km: v.toFixed(1) });
-    }
+    const kmPorSemana = stats.corridas.map(r => ({
+      semana: r.semana, km: parseFloat(r.km || 0).toFixed(1)
+    }));
+    const semanaPlano = Math.min(kmPorSemana.length + 1, 8);
+    const faseAtual = semanaPlano <= 2 ? 'Base' : semanaPlano <= 5 ? 'Construção' : 'Consolidação';
 
-    // Semana plano de corrida (qual semana do plano está?)
-    // Plano começa na semana 1. Estima pela primeira corrida registrada.
-    const semanaPlano = kmPorSemana.length + 1;
+    const maxKm = Math.max(...kmPorSemana.map(k => parseFloat(k.km)), 5);
+
+    // motivational header text
+    const horaAtual = new Date().getHours();
+    const saudacao = horaAtual < 12 ? 'Bom dia' : horaAtual < 18 ? 'Boa tarde' : 'Boa noite';
+    const motivacional = [
+      'Cada treino conta. Cada dia importa.',
+      'Você escolheu se mover. Isso já é tudo.',
+      'Constância vence talento toda semana.',
+      'Um passo de cada vez. Mas não para.',
+      'O corpo lembra de tudo que você faz por ele.',
+    ][hoje.getDay() % 5];
 
     res.send(renderHTML({
       stats, dica, proximo, diasSemana,
-      feitasSemana, possiveisSemana,
-      anoMes, diasNoMes, primeiroDow,
+      feitasSemana, possiveisSemana, pctSemana,
+      anoMes, diasNoMes, primeiroDowSeg,
       treinosMap, hoje: hojeStr(),
-      kmPorSemana, semanaPlano,
+      kmPorSemana, semanaPlano, faseAtual, maxKm,
+      saudacao, motivacional,
     }));
   } catch (e) {
     console.error(e);
-    res.status(500).send('<pre>' + e.message + '</pre>');
+    res.status(500).send('<pre style="padding:2rem;font-size:14px">' + e.message + '</pre>');
   }
 });
 
-// POST /treino — registrar treino
 app.post('/treino', async (req, res) => {
   const { data, tipo, concluido, nota, duracao_min, distancia_km } = req.body;
   try {
-    const existing = await pool.query(
-      'SELECT id FROM treinos WHERE data = $1 AND tipo = $2', [data, tipo]
-    );
+    const existing = await pool.query('SELECT id FROM treinos WHERE data = $1 AND tipo = $2', [data, tipo]);
     if (existing.rows.length) {
       await pool.query(
         'UPDATE treinos SET concluido=$1, nota=$2, duracao_min=$3, distancia_km=$4 WHERE id=$5',
-        [concluido === 'true' || concluido === true, nota || null,
-         duracao_min || null, distancia_km || null, existing.rows[0].id]
+        [concluido === 'true', nota || null, duracao_min || null, distancia_km || null, existing.rows[0].id]
       );
     } else {
       await pool.query(
         'INSERT INTO treinos (data, tipo, concluido, nota, duracao_min, distancia_km) VALUES ($1,$2,$3,$4,$5,$6)',
-        [data, tipo, concluido === 'true' || concluido === true,
-         nota || null, duracao_min || null, distancia_km || null]
+        [data, tipo, concluido === 'true', nota || null, duracao_min || null, distancia_km || null]
       );
     }
     res.redirect('/');
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ erro: e.message });
+    res.status(500).send(e.message);
   }
 });
 
-// POST /treino/toggle — marcar/desmarcar rápido
 app.post('/treino/toggle', async (req, res) => {
   const { data, tipo } = req.body;
   try {
-    const existing = await pool.query(
-      'SELECT id, concluido FROM treinos WHERE data = $1 AND tipo = $2', [data, tipo]
-    );
+    const existing = await pool.query('SELECT id, concluido FROM treinos WHERE data = $1 AND tipo = $2', [data, tipo]);
     if (existing.rows.length) {
       const novo = !existing.rows[0].concluido;
       await pool.query('UPDATE treinos SET concluido=$1 WHERE id=$2', [novo, existing.rows[0].id]);
+      res.json({ ok: true, concluido: novo });
     } else {
-      await pool.query(
-        'INSERT INTO treinos (data, tipo, concluido) VALUES ($1,$2,true)', [data, tipo]
-      );
+      await pool.query('INSERT INTO treinos (data, tipo, concluido) VALUES ($1,$2,true)', [data, tipo]);
+      res.json({ ok: true, concluido: true });
     }
-    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ erro: e.message });
   }
 });
 
-// GET /api/stats — JSON para uso externo
-app.get('/api/stats', async (req, res) => {
-  try {
-    const stats = await getStats();
-    res.json(stats);
-  } catch (e) {
-    res.status(500).json({ erro: e.message });
-  }
-});
-
-// ── HTML ─────────────────────────────────────────────────────────────────────
-
-function renderHTML(data) {
+function renderHTML(d) {
   const {
     stats, dica, proximo, diasSemana,
-    feitasSemana, possiveisSemana,
-    anoMes, diasNoMes, primeiroDow,
+    feitasSemana, possiveisSemana, pctSemana,
+    anoMes, diasNoMes, primeiroDowSeg,
     treinosMap, hoje,
-    kmPorSemana, semanaPlano,
-  } = data;
-
-  const pctSemana = possiveisSemana > 0 ? Math.round((feitasSemana / possiveisSemana) * 100) : 0;
-
-  // Calendário do mês
-  const calCells = [];
-  const offset = primeiroDow === 0 ? 6 : primeiroDow - 1; // seg=0
-  for (let i = 0; i < offset; i++) calCells.push(null);
-  for (let d = 1; d <= diasNoMes; d++) calCells.push(d);
+    kmPorSemana, semanaPlano, faseAtual, maxKm,
+    saudacao, motivacional,
+  } = d;
 
   const anoAtual = new Date().getFullYear();
   const mesAtual = new Date().getMonth();
 
-  function calCell(d) {
-    if (!d) return `<div class="cal-empty"></div>`;
-    const ds = `${anoAtual}-${String(mesAtual + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function calCell(day) {
+    if (!day) return `<div></div>`;
+    const ds = `${anoAtual}-${pad(mesAtual+1)}-${pad(day)}`;
     const treinos = treinosMap[ds] || [];
     const feito = treinos.some(t => t.concluido);
-    const temTreino = treinos.length > 0;
+    const pendente = treinos.length > 0 && !feito;
     const isHoje = ds === hoje;
-    let cls = 'cal-day';
+    let cls = 'cal-d';
     if (isHoje) cls += ' cal-hoje';
     if (feito) cls += ' cal-feito';
-    else if (temTreino) cls += ' cal-pendente';
-    return `<div class="${cls}" title="${treinos.map(t=>t.tipo).join(', ') || ''}">${d}${feito ? '<span class="cal-check">✓</span>' : ''}</div>`;
+    else if (pendente) cls += ' cal-pendente';
+    return `<div class="${cls}">${day}${feito ? '<i>✓</i>' : ''}</div>`;
   }
 
-  // Linha do progresso de corrida
-  const maxKm = Math.max(...kmPorSemana.map(k => parseFloat(k.km)), 5);
-  const corridaChartBars = kmPorSemana.slice(-8).map((k, i) => {
-    const pct = Math.round((parseFloat(k.km) / maxKm) * 100);
-    const d = new Date(k.semana);
-    const label = `${d.getDate()}/${d.getMonth()+1}`;
-    return `<div class="bar-col">
-      <div class="bar-val">${k.km}km</div>
-      <div class="bar-wrap"><div class="bar-fill" style="height:${pct}%"></div></div>
-      <div class="bar-label">${label}</div>
-    </div>`;
-  }).join('');
+  const calCells = [];
+  for (let i = 0; i < primeiroDowSeg; i++) calCells.push(null);
+  for (let d2 = 1; d2 <= diasNoMes; d2++) calCells.push(d2);
 
-  // Próximo treino label
-  let proximoLabel = '';
-  if (proximo) {
-    if (proximo.hoje) proximoLabel = 'hoje';
-    else if (proximo.amanha) proximoLabel = 'amanhã';
-    else proximoLabel = `em ${proximo.daqui} dias`;
-  }
-
-  // Dias da semana
-  const semanaCells = diasSemana.map(d => {
-    const isDescanso = d.rotina?.tipo === 'Descanso';
-    const feito = d.treino?.concluido;
-    const temTreino = !!d.treino;
-    let cls = 'dia-card';
-    if (d.hoje) cls += ' dia-hoje';
+  const semanaCells = diasSemana.map(d2 => {
+    const isDescanso = d2.rotina?.tipo === 'Descanso';
+    const feito = d2.treino?.concluido;
+    let cls = 'dia';
+    if (d2.hoje) cls += ' dia-hoje';
     if (feito) cls += ' dia-feito';
     if (isDescanso) cls += ' dia-descanso';
 
-    const toggleBtn = !isDescanso ? `
-      <form method="POST" action="/treino/toggle" style="margin-top:8px">
-        <input type="hidden" name="data" value="${d.data}">
-        <input type="hidden" name="tipo" value="${d.rotina?.tipo}">
-        <button type="submit" class="btn-toggle ${feito ? 'btn-desfazer' : 'btn-marcar'}">
-          ${feito ? '✓ Feito' : 'Marcar'}
-        </button>
-      </form>` : '';
-
-    const nota = d.treino?.nota ? `<div class="dia-nota">"${d.treino.nota}"</div>` : '';
-
-    return `
-    <div class="${cls}">
-      <div class="dia-topo">
-        <span class="dia-nome">${d.diaNome}</span>
-        <span class="dia-num">${d.dia}</span>
+    return `<div class="${cls}" ${!isDescanso ? `onclick="toggleTreino('${d2.data}','${d2.rotina?.tipo}')"` : ''}>
+      <div class="dia-top">
+        <span class="dia-nome">${d2.diaNome}</span>
+        ${d2.hoje ? '<span class="badge-hoje">hoje</span>' : ''}
       </div>
-      ${isDescanso
-        ? `<div class="dia-tipo muted">Descanso</div>`
-        : `<div class="dia-icone">${d.rotina?.icone}</div>
-           <div class="dia-tipo">${d.rotina?.tipo}</div>
-           <div class="dia-hora">${d.rotina?.horario}</div>`
-      }
-      ${nota}
-      ${toggleBtn}
+      <div class="dia-icone">${d2.rotina?.icone}</div>
+      <div class="dia-label">${isDescanso ? 'descanso' : d2.rotina?.label}</div>
+      ${!isDescanso ? `<div class="dia-hora">${d2.rotina?.horario}</div>` : ''}
+      ${feito ? '<div class="dia-check">✓</div>' : (!isDescanso ? '<div class="dia-open">○</div>' : '')}
+      ${d2.treino?.nota ? `<div class="dia-nota">${d2.treino.nota}</div>` : ''}
     </div>`;
   }).join('');
+
+  const barras = kmPorSemana.slice(-8).map(k => {
+    const pct = Math.round((parseFloat(k.km) / maxKm) * 100);
+    const dt = new Date(k.semana);
+    return `<div class="bar-item">
+      <div class="bar-km">${k.km}</div>
+      <div class="bar-outer"><div class="bar-inner" style="height:${Math.max(pct,3)}%"></div></div>
+      <div class="bar-week">${dt.getDate()}/${dt.getMonth()+1}</div>
+    </div>`;
+  }).join('');
+
+  const proximoLabel = proximo
+    ? (proximo.daqui === 0 ? 'Hoje' : proximo.daqui === 1 ? 'Amanhã' : `${proximo.dia}`)
+    : '—';
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Treinos — Renato</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Treinos · Renato</title>
 <style>
-  :root {
-    --bg: #f5f4f0;
-    --card: #ffffff;
-    --border: #e8e6e0;
-    --text: #1a1a1a;
-    --muted: #888;
-    --green: #2d6a4f;
-    --green-light: #d8f3dc;
-    --blue: #3d405b;
-    --blue-light: #e8e9f3;
-    --amber: #8b5e3c;
-    --amber-light: #fdf0e0;
-    --accent: #2d6a4f;
-    --radius: 14px;
-  }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body {
-    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    padding: 0 0 48px;
-  }
-  /* HEADER */
-  .header {
-    background: var(--card);
-    border-bottom: 1px solid var(--border);
-    padding: 20px 32px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
-  .header h1 {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text);
-    letter-spacing: -0.02em;
-  }
-  .header h1 span { color: var(--green); }
-  .header-data {
-    font-size: 13px;
-    color: var(--muted);
-  }
-  /* MAIN */
-  .main {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 28px 24px 0;
-  }
-  /* CARDS TOPO */
-  .stats-row {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 14px;
-    margin-bottom: 20px;
-  }
-  .stat-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px 22px;
-  }
-  .stat-label {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 8px;
-  }
-  .stat-value {
-    font-size: 36px;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    line-height: 1;
-    color: var(--text);
-  }
-  .stat-sub {
-    font-size: 12px;
-    color: var(--muted);
-    margin-top: 5px;
-  }
-  .stat-card.destaque {
-    background: var(--green);
-    border-color: var(--green);
-  }
-  .stat-card.destaque .stat-label { color: rgba(255,255,255,0.6); }
-  .stat-card.destaque .stat-value { color: #fff; }
-  .stat-card.destaque .stat-sub { color: rgba(255,255,255,0.55); }
-  /* GRADE */
-  .grid-2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-    margin-bottom: 20px;
-  }
-  .grid-3 {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 14px;
-    margin-bottom: 20px;
-  }
-  /* SECTION */
-  .section {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 22px 24px;
-  }
-  .section-title {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .section-title::before {
-    content: '';
-    display: block;
-    width: 14px;
-    height: 2px;
-    background: var(--accent);
-    border-radius: 2px;
-  }
-  /* SEMANA */
-  .semana-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 8px;
-  }
-  .dia-card {
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px 8px;
-    text-align: center;
-    min-height: 110px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    background: #fafaf8;
-    transition: box-shadow 0.15s;
-  }
-  .dia-card.dia-hoje {
-    border-color: var(--green);
-    background: #f0faf4;
-  }
-  .dia-card.dia-feito { background: #f0faf4; }
-  .dia-card.dia-descanso { background: #f9f9f7; opacity: 0.6; }
-  .dia-topo { width: 100%; display: flex; justify-content: space-between; align-items: center; }
-  .dia-nome { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-  .dia-num { font-size: 11px; font-weight: 700; color: var(--text); }
-  .dia-icone { font-size: 18px; margin: 4px 0; }
-  .dia-tipo { font-size: 9px; font-weight: 600; color: var(--text); text-align: center; line-height: 1.3; }
-  .dia-hora { font-size: 8px; color: var(--muted); }
-  .muted { color: var(--muted) !important; }
-  .dia-nota { font-size: 8px; color: var(--muted); font-style: italic; margin-top: 3px; }
-  /* BOTÕES TOGGLE */
-  .btn-toggle {
-    margin-top: auto;
-    font-size: 9px;
-    font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 20px;
-    border: none;
-    cursor: pointer;
-    transition: opacity 0.15s;
-    letter-spacing: 0.04em;
-  }
-  .btn-marcar { background: var(--green-light); color: var(--green); }
-  .btn-desfazer { background: var(--green); color: #fff; }
-  .btn-toggle:hover { opacity: 0.8; }
-  /* BARRA DE PROGRESSO SEMANA */
-  .prog-bar-wrap {
-    background: var(--bg);
-    border-radius: 99px;
-    height: 8px;
-    margin: 10px 0 6px;
-    overflow: hidden;
-  }
-  .prog-bar-fill {
-    height: 100%;
-    border-radius: 99px;
-    background: var(--green);
-    transition: width 0.4s ease;
-  }
-  .prog-label {
-    font-size: 12px;
-    color: var(--muted);
-    display: flex;
-    justify-content: space-between;
-  }
-  /* CALENDÁRIO */
-  .cal-header {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
-    margin-bottom: 4px;
-  }
-  .cal-header span {
-    text-align: center;
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    padding: 4px 0;
-  }
-  .cal-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 3px;
-  }
-  .cal-empty { border-radius: 6px; }
-  .cal-day {
-    aspect-ratio: 1;
-    border-radius: 6px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text);
-    background: #f7f7f5;
-    border: 1px solid transparent;
-    position: relative;
-    cursor: default;
-  }
-  .cal-hoje { border-color: var(--green) !important; font-weight: 800; }
-  .cal-feito { background: var(--green-light); color: var(--green); }
-  .cal-pendente { background: var(--amber-light); }
-  .cal-check {
-    position: absolute;
-    bottom: 2px;
-    right: 3px;
-    font-size: 7px;
-    color: var(--green);
-    font-weight: 800;
-  }
-  /* CORRIDA BARRAS */
-  .bar-chart {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
-    height: 120px;
-    padding-top: 24px;
-  }
-  .bar-col {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    height: 100%;
-  }
-  .bar-val {
-    font-size: 9px;
-    font-weight: 700;
-    color: var(--green);
-    margin-bottom: 4px;
-    white-space: nowrap;
-  }
-  .bar-wrap {
-    flex: 1;
-    width: 100%;
-    background: var(--bg);
-    border-radius: 4px;
-    display: flex;
-    align-items: flex-end;
-    overflow: hidden;
-  }
-  .bar-fill {
-    width: 100%;
-    background: var(--green);
-    border-radius: 4px;
-    min-height: 4px;
-    transition: height 0.4s ease;
-  }
-  .bar-label {
-    font-size: 8px;
-    color: var(--muted);
-    margin-top: 4px;
-    white-space: nowrap;
-  }
-  .bar-empty {
-    flex: 1;
-    text-align: center;
-    color: var(--muted);
-    font-size: 12px;
-    align-self: center;
-    padding: 20px;
-  }
-  /* PRÓXIMO TREINO */
-  .proximo-card {
-    background: var(--blue-light);
-    border: 1px solid #d0d2e8;
-    border-radius: 10px;
-    padding: 16px 18px;
-  }
-  .proximo-quando {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--blue);
-    margin-bottom: 6px;
-  }
-  .proximo-tipo {
-    font-size: 20px;
-    font-weight: 800;
-    color: var(--blue);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .proximo-hora {
-    font-size: 12px;
-    color: #666;
-    margin-top: 4px;
-  }
-  /* DICA */
-  .dica-box {
-    background: var(--amber-light);
-    border: 1px solid #e8d5b8;
-    border-radius: 10px;
-    padding: 16px 18px;
-  }
-  .dica-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--amber);
-    margin-bottom: 8px;
-  }
-  .dica-texto {
-    font-size: 14px;
-    line-height: 1.6;
-    color: #5a3d22;
-    font-style: italic;
-  }
-  .dica-cat {
-    font-size: 10px;
-    color: #a07040;
-    margin-top: 8px;
-    font-weight: 600;
-  }
-  /* FORM REGISTRO */
-  .form-registro {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-  }
-  .form-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-  .form-registro input,
-  .form-registro select,
-  .form-registro textarea {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-size: 13px;
-    font-family: inherit;
-    background: var(--bg);
-    color: var(--text);
-    outline: none;
-  }
-  .form-registro input:focus,
-  .form-registro select:focus,
-  .form-registro textarea:focus {
-    border-color: var(--green);
-  }
-  .form-registro textarea { width: 100%; resize: vertical; min-height: 60px; }
-  .btn-registrar {
-    background: var(--green);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 9px 20px;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: opacity 0.15s;
-  }
-  .btn-registrar:hover { opacity: 0.85; }
-  /* PLANO CORRIDA */
-  .plano-semana {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--green-light);
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-bottom: 12px;
-  }
-  .plano-num {
-    font-size: 32px;
-    font-weight: 800;
-    color: var(--green);
-    line-height: 1;
-  }
-  .plano-info { flex: 1; }
-  .plano-titulo { font-size: 14px; font-weight: 700; color: var(--green); }
-  .plano-desc { font-size: 12px; color: #3a7d5a; margin-top: 2px; }
-  /* RESPONSIVE */
-  @media (max-width: 900px) {
-    .stats-row { grid-template-columns: repeat(2, 1fr); }
-    .grid-2, .grid-3 { grid-template-columns: 1fr; }
-    .semana-grid { grid-template-columns: repeat(4, 1fr); }
-  }
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#f6f5f1;
+  --card:#fff;
+  --border:#e9e7e1;
+  --text:#1c1c1c;
+  --muted:#9a9690;
+  --green:#2a7a57;
+  --green-mid:#3d9e72;
+  --green-light:#e8f5ee;
+  --green-xlight:#f2faf5;
+  --amber:#b86b1a;
+  --amber-light:#fef3e2;
+  --blue:#3a4a7a;
+  --blue-light:#edf0fa;
+  --red:#c0392b;
+  --r:16px;
+  --r-sm:10px;
+}
+body{font-family:-apple-system,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+/* HERO */
+.hero{
+  background:linear-gradient(135deg,#1e3a2f 0%,#2a7a57 60%,#3d9e72 100%);
+  padding:40px 32px 56px;
+  position:relative;
+  overflow:hidden;
+}
+.hero::after{
+  content:'';position:absolute;bottom:-2px;left:0;right:0;height:32px;
+  background:var(--bg);border-radius:32px 32px 0 0;
+}
+.hero-saudacao{font-size:13px;font-weight:600;color:rgba(255,255,255,0.6);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px}
+.hero-nome{font-size:30px;font-weight:800;color:#fff;letter-spacing:-0.02em;line-height:1.1;margin-bottom:4px}
+.hero-frase{font-size:14px;color:rgba(255,255,255,0.6);margin-bottom:32px}
+.hero-stats{display:flex;gap:20px}
+.hero-stat{background:rgba(255,255,255,0.12);border-radius:14px;padding:16px 20px;min-width:110px;border:1px solid rgba(255,255,255,0.15)}
+.hero-stat-val{font-size:36px;font-weight:800;color:#fff;letter-spacing:-0.03em;line-height:1}
+.hero-stat-label{font-size:11px;color:rgba(255,255,255,0.55);font-weight:600;margin-top:4px;letter-spacing:0.04em;text-transform:uppercase}
+.hero-streak{background:rgba(255,255,255,0.18);border-color:rgba(255,255,255,0.3)}
+.hero-streak .hero-stat-val{color:#a8f0c6}
+
+/* MAIN */
+.main{max-width:1080px;margin:0 auto;padding:24px 20px 60px}
+
+/* CARDS GRID */
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+.grid-3{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:20px}
+
+/* CARD */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:22px}
+.card-title{font-size:10px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:7px}
+.card-title::before{content:'';width:12px;height:2px;background:var(--green);border-radius:2px;display:block}
+
+/* PRÓXIMO */
+.proximo-quando{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--green);margin-bottom:8px}
+.proximo-icone{font-size:44px;line-height:1;margin-bottom:8px}
+.proximo-tipo{font-size:20px;font-weight:800;color:var(--text);letter-spacing:-0.01em}
+.proximo-hora{font-size:13px;color:var(--muted);margin-top:4px}
+
+/* SEMANA */
+.semana-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.dia{
+  border:1.5px solid var(--border);border-radius:var(--r-sm);
+  padding:10px 6px;text-align:center;cursor:pointer;
+  transition:all 0.18s ease;display:flex;flex-direction:column;align-items:center;gap:3px;
+  min-height:100px;position:relative;user-select:none;
+  background:#fafaf7;
+}
+.dia:hover{border-color:var(--green-mid);transform:translateY(-2px);box-shadow:0 4px 16px rgba(42,122,87,0.12)}
+.dia-hoje{border-color:var(--green);background:var(--green-xlight)}
+.dia-feito{background:var(--green-light);border-color:var(--green)}
+.dia-descanso{opacity:0.45;cursor:default}
+.dia-descanso:hover{transform:none;box-shadow:none;border-color:var(--border)}
+.dia-top{width:100%;display:flex;justify-content:space-between;align-items:center}
+.dia-nome{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted)}
+.badge-hoje{font-size:7px;font-weight:800;background:var(--green);color:#fff;border-radius:20px;padding:1px 5px;letter-spacing:0.04em}
+.dia-icone{font-size:22px;margin:4px 0 2px}
+.dia-label{font-size:9px;font-weight:700;color:var(--text)}
+.dia-hora{font-size:8px;color:var(--muted)}
+.dia-check{font-size:16px;color:var(--green);font-weight:800;margin-top:2px}
+.dia-open{font-size:14px;color:#ccc;margin-top:2px}
+.dia-nota{font-size:7px;color:var(--muted);font-style:italic;margin-top:3px;line-height:1.3;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* PROG SEMANA */
+.prog-wrap{background:var(--bg);border-radius:99px;height:10px;margin:12px 0 6px;overflow:hidden}
+.prog-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--green),var(--green-mid));transition:width 0.6s ease}
+.prog-label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);font-weight:600}
+.prog-pct{color:var(--green)}
+
+/* CALENDÁRIO */
+.cal-header{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px}
+.cal-header span{text-align:center;font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);padding:3px 0}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-d{
+  aspect-ratio:1;border-radius:7px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;font-size:11px;font-weight:600;
+  color:var(--text);background:#f7f6f2;border:1px solid transparent;position:relative;
+}
+.cal-hoje{border-color:var(--green);font-weight:800;color:var(--green)}
+.cal-feito{background:var(--green-light);color:var(--green);font-weight:700}
+.cal-pendente{background:var(--amber-light);color:var(--amber)}
+.cal-d i{position:absolute;bottom:1px;right:2px;font-size:7px;color:var(--green);font-style:normal;font-weight:800}
+.cal-legenda{display:flex;gap:12px;margin-top:10px;font-size:10px;color:var(--muted)}
+.cal-legenda span{display:flex;align-items:center;gap:5px}
+.cal-legenda b{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+/* DICA */
+.dica-card{background:var(--amber-light);border:1px solid #f0d9b0;border-radius:var(--r);padding:22px}
+.dica-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.12em;color:var(--amber);margin-bottom:10px}
+.dica-texto{font-size:15px;line-height:1.65;color:#5a3a10;font-style:italic;font-weight:500}
+.dica-cat{font-size:10px;color:#c48a3a;margin-top:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em}
+
+/* CORRIDA */
+.plano-badge{
+  display:inline-flex;align-items:center;gap:10px;
+  background:var(--green-light);border-radius:10px;padding:12px 16px;margin-bottom:14px;width:100%;
+}
+.plano-num{font-size:28px;font-weight:800;color:var(--green);line-height:1}
+.plano-info-titulo{font-size:13px;font-weight:700;color:var(--green)}
+.plano-info-sub{font-size:11px;color:#3d8a62;margin-top:1px}
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:110px;padding-top:20px}
+.bar-item{flex:1;display:flex;flex-direction:column;align-items:center;height:100%}
+.bar-km{font-size:8px;font-weight:700;color:var(--green);margin-bottom:3px}
+.bar-outer{flex:1;width:100%;background:var(--bg);border-radius:5px;overflow:hidden;display:flex;align-items:flex-end}
+.bar-inner{width:100%;background:linear-gradient(180deg,var(--green-mid),var(--green));border-radius:5px;min-height:4px;transition:height 0.5s ease}
+.bar-week{font-size:8px;color:var(--muted);margin-top:4px;white-space:nowrap}
+.corrida-empty{text-align:center;padding:24px 0;color:var(--muted);font-size:13px}
+.corrida-empty div:first-child{font-size:32px;margin-bottom:8px}
+
+/* REGISTRO */
+.reg-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.reg-header{background:linear-gradient(135deg,#1e3a2f,#2a7a57);padding:20px 24px}
+.reg-header h3{font-size:16px;font-weight:800;color:#fff;margin-bottom:2px}
+.reg-header p{font-size:12px;color:rgba(255,255,255,0.6)}
+.reg-body{padding:24px}
+.reg-section{margin-bottom:20px}
+.reg-section-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:10px}
+.tipo-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:0}
+.tipo-btn{
+  border:1.5px solid var(--border);border-radius:10px;padding:10px 6px;
+  text-align:center;cursor:pointer;transition:all 0.15s;background:#fafaf7;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+}
+.tipo-btn:hover{border-color:var(--green);background:var(--green-xlight)}
+.tipo-btn.selected{border-color:var(--green);background:var(--green-light)}
+.tipo-btn input{display:none}
+.tipo-icon{font-size:20px}
+.tipo-nome{font-size:9px;font-weight:700;color:var(--text);text-align:center;line-height:1.2}
+.fields-row{display:flex;gap:10px;flex-wrap:wrap}
+.field-group{display:flex;flex-direction:column;gap:5px;flex:1;min-width:120px}
+.field-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em}
+.field-input{
+  border:1.5px solid var(--border);border-radius:9px;padding:10px 13px;
+  font-size:14px;font-family:inherit;background:var(--bg);color:var(--text);
+  outline:none;transition:border-color 0.15s;width:100%;
+}
+.field-input:focus{border-color:var(--green)}
+.humor-row{display:flex;gap:8px}
+.humor-btn{
+  flex:1;border:1.5px solid var(--border);border-radius:9px;padding:10px;
+  text-align:center;cursor:pointer;font-size:20px;transition:all 0.15s;background:#fafaf7;
+}
+.humor-btn:hover{transform:scale(1.08)}
+.humor-btn.selected{border-color:var(--green);background:var(--green-light)}
+.humor-btn input{display:none}
+textarea.field-input{resize:vertical;min-height:70px;font-size:13px}
+.btn-salvar{
+  width:100%;background:linear-gradient(135deg,#1e3a2f,#2a7a57);color:#fff;
+  border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:800;
+  cursor:pointer;transition:opacity 0.15s;letter-spacing:0.02em;margin-top:4px;
+}
+.btn-salvar:hover{opacity:0.88}
+.btn-salvar:active{transform:scale(0.99)}
+
+/* NOTIF */
+#notif{
+  position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:#1e3a2f;color:#fff;padding:14px 28px;border-radius:99px;
+  font-size:14px;font-weight:700;opacity:0;transition:all 0.3s ease;
+  pointer-events:none;z-index:100;white-space:nowrap;
+}
+#notif.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+@media(max-width:860px){
+  .grid-4{grid-template-columns:repeat(2,1fr)}
+  .grid-2,.grid-3{grid-template-columns:1fr}
+  .semana-grid{grid-template-columns:repeat(4,1fr)}
+  .hero-stats{flex-wrap:wrap}
+  .tipo-grid{grid-template-columns:repeat(3,1fr)}
+}
 </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>Renato <span>/ Treinos</span></h1>
-  <div class="header-data">${new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' })}</div>
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-saudacao">${saudacao}, Renato</div>
+  <div class="hero-nome">Seus treinos 💪</div>
+  <div class="hero-frase">${motivacional}</div>
+  <div class="hero-stats">
+    <div class="hero-stat hero-streak">
+      <div class="hero-stat-val">${stats.streak}</div>
+      <div class="hero-stat-label">Dias seguidos</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-val">${stats.total}</div>
+      <div class="hero-stat-label">Total feitos</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-val">${feitasSemana}/${possiveisSemana}</div>
+      <div class="hero-stat-label">Esta semana</div>
+    </div>
+    <div class="hero-stat">
+      <div class="hero-stat-val">${semanaPlano}/8</div>
+      <div class="hero-stat-label">Plano corrida</div>
+    </div>
+  </div>
 </div>
 
 <div class="main">
 
-  <!-- STATS TOPO -->
-  <div class="stats-row">
-    <div class="stat-card destaque">
-      <div class="stat-label">Sequência ativa</div>
-      <div class="stat-value">${stats.streak}</div>
-      <div class="stat-sub">dias ativos nos últimos 30</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Total de treinos</div>
-      <div class="stat-value">${stats.total}</div>
-      <div class="stat-sub">desde o início</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Esta semana</div>
-      <div class="stat-value">${feitasSemana}<span style="font-size:18px;color:#aaa">/${possiveisSemana}</span></div>
-      <div class="stat-sub">${pctSemana}% da meta semanal</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Plano de corrida</div>
-      <div class="stat-value">${Math.min(semanaPlano, 8)}<span style="font-size:18px;color:#aaa">/8</span></div>
-      <div class="stat-sub">semana ${Math.min(semanaPlano, 8)} de 8</div>
-    </div>
-  </div>
-
-  <!-- SEMANA ATUAL -->
-  <div class="section" style="margin-bottom:20px">
-    <div class="section-title">Semana atual</div>
+  <!-- SEMANA + PRÓXIMO + DICA -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title">Semana atual</div>
     <div class="semana-grid">${semanaCells}</div>
-    <div style="margin-top:14px">
+    <div style="margin-top:16px">
       <div class="prog-label">
-        <span>${feitasSemana} de ${possiveisSemana} treinos concluídos</span>
-        <span>${pctSemana}%</span>
+        <span>${feitasSemana} de ${possiveisSemana} treinos</span>
+        <span class="prog-pct">${pctSemana}%</span>
       </div>
-      <div class="prog-bar-wrap">
-        <div class="prog-bar-fill" style="width:${pctSemana}%"></div>
-      </div>
+      <div class="prog-wrap"><div class="prog-fill" style="width:${pctSemana}%"></div></div>
     </div>
   </div>
 
-  <!-- PRÓXIMO + DICA -->
   <div class="grid-2">
-    <div class="section">
-      <div class="section-title">Próximo treino</div>
+    <!-- PRÓXIMO -->
+    <div class="card">
+      <div class="card-title">Próximo treino</div>
       ${proximo ? `
-      <div class="proximo-card">
-        <div class="proximo-quando">${proximo.hoje ? 'Hoje' : proximo.amanha ? 'Amanhã' : proximo.dia} · ${proximoLabel}</div>
-        <div class="proximo-tipo">${proximo.icone} ${proximo.tipo}</div>
+        <div class="proximo-quando">${proximoLabel}</div>
+        <div class="proximo-icone">${proximo.icone}</div>
+        <div class="proximo-tipo">${proximo.tipo}</div>
         <div class="proximo-hora">${proximo.horario}</div>
-      </div>
-      ` : '<p style="color:var(--muted);font-size:13px">Sem treinos pendentes.</p>'}
+      ` : '<p style="color:var(--muted);font-size:13px">Sem treinos previstos.</p>'}
     </div>
-    <div class="section">
-      <div class="section-title">Dica do dia</div>
-      <div class="dica-box">
-        <div class="dica-label">💡 Para você</div>
-        <div class="dica-texto">"${dica.texto}"</div>
-        <div class="dica-cat">#${dica.categoria}</div>
-      </div>
+
+    <!-- DICA -->
+    <div class="dica-card">
+      <div class="dica-label">💡 Dica do dia</div>
+      <div class="dica-texto">"${dica.texto}"</div>
+      <div class="dica-cat">#${dica.categoria}</div>
     </div>
   </div>
 
   <!-- CALENDÁRIO + CORRIDA -->
   <div class="grid-3">
-    <div class="section">
-      <div class="section-title">Calendário — ${anoMes}</div>
+    <div class="card">
+      <div class="card-title">Calendário — ${anoMes}</div>
       <div class="cal-header">
-        ${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => `<span>${d}</span>`).join('')}
+        ${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d2=>`<span>${d2}</span>`).join('')}
       </div>
       <div class="cal-grid">
-        ${calCells.map(d => calCell(d)).join('')}
+        ${calCells.map(d2=>calCell(d2)).join('')}
       </div>
-      <div style="display:flex;gap:12px;margin-top:12px;font-size:11px;color:var(--muted)">
-        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:var(--green-light);display:inline-block"></span> Feito</span>
-        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:var(--amber-light);display:inline-block"></span> Pendente</span>
+      <div class="cal-legenda">
+        <span><b style="background:var(--green-light);border:1px solid var(--green)"></b>Feito</span>
+        <span><b style="background:var(--amber-light);border:1px solid #e0b870"></b>Pendente</span>
       </div>
     </div>
-    <div class="section">
-      <div class="section-title">Progresso corrida</div>
-      ${semanaPlano <= 8 ? `
-      <div class="plano-semana">
-        <div class="plano-num">${Math.min(semanaPlano, 8)}</div>
-        <div class="plano-info">
-          <div class="plano-titulo">Semana ${Math.min(semanaPlano, 8)} de 8</div>
-          <div class="plano-desc">${semanaPlano <= 2 ? 'Fase 1 — Base' : semanaPlano <= 5 ? 'Fase 2 — Construção' : 'Fase 3 — Consolidação'}</div>
+
+    <div class="card">
+      <div class="card-title">Progresso — corrida</div>
+      <div class="plano-badge">
+        <div class="plano-num">${semanaPlano}</div>
+        <div>
+          <div class="plano-info-titulo">Semana ${semanaPlano} de 8</div>
+          <div class="plano-info-sub">Fase: ${faseAtual}</div>
         </div>
-      </div>` : ''}
-      ${kmPorSemana.length > 0 ? `
-      <div class="bar-chart">
-        ${corridaChartBars}
-      </div>` : `<div class="bar-empty" style="padding:30px 0;text-align:center">
-        <div style="font-size:28px;margin-bottom:8px">🏃</div>
-        <div style="font-size:13px;color:var(--muted)">Registre sua primeira corrida<br>para ver o progresso aqui.</div>
-      </div>`}
+      </div>
+      ${kmPorSemana.length > 0
+        ? `<div class="bar-chart">${barras}</div>`
+        : `<div class="corrida-empty"><div>🏃</div>Registre sua primeira corrida com distância para ver o progresso aqui.</div>`
+      }
     </div>
   </div>
 
-  <!-- REGISTRAR TREINO -->
-  <div class="section">
-    <div class="section-title">Registrar treino</div>
-    <form method="POST" action="/treino">
-      <div class="form-row">
-        <input type="date" name="data" value="${hoje}" required>
-        <select name="tipo" required>
-          <option value="">Tipo de treino</option>
-          <option value="Corrida leve">🏃 Corrida leve</option>
-          <option value="Academia — sup. A">💪 Academia — superior A</option>
-          <option value="Academia — sup. B">💪 Academia — superior B</option>
-          <option value="Academia — inf.">🦵 Academia — inferior</option>
-          <option value="Beach tennis">🎾 Beach tennis</option>
-        </select>
-        <input type="number" name="duracao_min" placeholder="Duração (min)" min="1" max="240" style="width:150px">
-        <input type="number" name="distancia_km" placeholder="Distância (km)" min="0" max="50" step="0.1" style="width:150px">
-        <select name="concluido">
-          <option value="true">✓ Concluído</option>
-          <option value="false">✗ Não feito</option>
-        </select>
-      </div>
-      <textarea name="nota" placeholder="Como foi o treino? Alguma observação sobre o joelho, ritmo, disposição..."></textarea>
-      <div style="margin-top:8px">
-        <button type="submit" class="btn-registrar">Salvar treino</button>
-      </div>
-    </form>
+  <!-- REGISTRO -->
+  <div class="reg-card">
+    <div class="reg-header">
+      <h3>Registrar treino</h3>
+      <p>Como foi hoje? Conta pra mim.</p>
+    </div>
+    <div class="reg-body">
+      <form method="POST" action="/treino" id="formTreino">
+        <input type="hidden" name="concluido" value="true">
+        <input type="hidden" name="tipo" id="tipoHidden">
+
+        <div class="reg-section">
+          <div class="reg-section-label">Qual treino?</div>
+          <div class="tipo-grid">
+            ${[
+              {val:'Corrida leve', icon:'🏃', nome:'Corrida'},
+              {val:'Academia — sup. A', icon:'💪', nome:'Sup. A'},
+              {val:'Academia — sup. B', icon:'💪', nome:'Sup. B'},
+              {val:'Academia — inf.', icon:'🦵', nome:'Inferior'},
+              {val:'Beach tennis', icon:'🎾', nome:'Beach'},
+            ].map(t => `
+              <label class="tipo-btn" onclick="selectTipo(this,'${t.val}')">
+                <div class="tipo-icon">${t.icon}</div>
+                <div class="tipo-nome">${t.nome}</div>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="reg-section">
+          <div class="reg-section-label">Data</div>
+          <input type="date" name="data" value="${hoje}" class="field-input" style="max-width:200px">
+        </div>
+
+        <div class="reg-section">
+          <div class="reg-section-label">Detalhes (opcional)</div>
+          <div class="fields-row">
+            <div class="field-group">
+              <div class="field-label">Duração</div>
+              <input type="number" name="duracao_min" placeholder="min" class="field-input" min="1" max="300">
+            </div>
+            <div class="field-group">
+              <div class="field-label">Distância</div>
+              <input type="number" name="distancia_km" placeholder="km" class="field-input" min="0" max="50" step="0.1">
+            </div>
+          </div>
+        </div>
+
+        <div class="reg-section">
+          <div class="reg-section-label">Como você se sentiu?</div>
+          <div class="humor-row" id="humorRow">
+            ${[
+              {val:'ótimo', icon:'🔥', label:'Ótimo'},
+              {val:'bem', icon:'😊', label:'Bem'},
+              {val:'ok', icon:'😐', label:'Ok'},
+              {val:'cansado', icon:'😓', label:'Cansado'},
+              {val:'difícil', icon:'😤', label:'Difícil'},
+            ].map(h => `
+              <label class="humor-btn" onclick="selectHumor(this,'${h.val}')">
+                <div>${h.icon}</div>
+              </label>
+            `).join('')}
+          </div>
+          <input type="hidden" name="_humor" id="humorHidden">
+        </div>
+
+        <div class="reg-section" style="margin-bottom:16px">
+          <div class="reg-section-label">Nota livre</div>
+          <textarea name="nota" class="field-input" id="notaField" placeholder="Como foi o treino? Joelho ok? Ritmo bom? Qualquer observação..."></textarea>
+        </div>
+
+        <button type="submit" class="btn-salvar">Salvar treino ✓</button>
+      </form>
+    </div>
   </div>
 
 </div>
 
+<div id="notif"></div>
+
+<script>
+function selectTipo(el, val) {
+  document.querySelectorAll('.tipo-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('tipoHidden').value = val;
+  // pré-preenche nota se corrida
+  const nota = document.getElementById('notaField');
+  if (val.includes('Corrida') && !nota.value) nota.placeholder = 'Ritmo ok? Joelho tranquilo? Distância percorrida?';
+  else if (val.includes('Beach') && !nota.value) nota.placeholder = 'Jogo bom? Nível dos parceiros? Algum destaque?';
+  else if (val.includes('Academia') && !nota.value) nota.placeholder = 'Carga boa? Algum exercício que sentiu mais? Joelho ok?';
+}
+
+function selectHumor(el, val) {
+  document.querySelectorAll('.humor-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('humorHidden').value = val;
+  // append ao nota
+  const nota = document.getElementById('notaField');
+  const cur = nota.value.replace(/^\\[.*?\\]\\s*/,'');
+  nota.value = '[' + val + '] ' + cur;
+}
+
+function toggleTreino(data, tipo) {
+  fetch('/treino/toggle', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({data, tipo})
+  })
+  .then(r => r.json())
+  .then(res => {
+    showNotif(res.concluido ? '✓ Treino marcado como feito!' : 'Treino desmarcado.');
+    setTimeout(() => location.reload(), 900);
+  });
+}
+
+function showNotif(msg) {
+  const el = document.getElementById('notif');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+document.getElementById('formTreino').addEventListener('submit', function(e) {
+  if (!document.getElementById('tipoHidden').value) {
+    e.preventDefault();
+    showNotif('⚠ Seleciona o tipo de treino primeiro!');
+  }
+});
+</script>
 </body>
 </html>`;
 }
 
-// ── START ────────────────────────────────────────────────────────────────────
-
 const PORT = process.env.PORT || 3000;
 initDB().then(() => {
-  app.listen(PORT, () => console.log(`Dashboard rodando na porta ${PORT}`));
+  app.listen(PORT, () => console.log('Dashboard rodando na porta ' + PORT));
 }).catch(e => {
   console.error('Erro ao inicializar banco:', e);
   process.exit(1);
