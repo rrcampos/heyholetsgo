@@ -238,7 +238,67 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 }
 #notif.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-@media(max-width:860px){.sidebar{display:none}.main{padding:20px 16px}}
+@media(max-width:860px){
+  .sidebar{display:none}
+  .main{padding:16px 16px 100px}
+  .bottom-nav{display:flex !important}
+  .topbar{padding:12px 16px}
+  .hero{padding:24px 16px 28px}
+  .hero-name{font-size:36px}
+  .big-stats{flex-direction:column;gap:0}
+  .big-stat{border-right:none !important;border-bottom:1px solid var(--border)}
+  .big-stat:last-child{border-bottom:none}
+  .big-stat-val{font-size:32px}
+  .two-col,.three-col{grid-template-columns:1fr !important}
+  .reg-body{grid-template-columns:1fr !important;gap:20px}
+  .tipo-grid{grid-template-columns:repeat(3,1fr) !important}
+  .fields-2{grid-template-columns:1fr 1fr}
+  .insight-row{grid-template-columns:1fr !important}
+  .two-col-metas{grid-template-columns:1fr !important}
+  .gauge-row{grid-template-columns:1fr 1fr !important}
+  .gauge-item{border-right:none !important;border-bottom:1px solid var(--border) !important}
+  .gauge-item:nth-child(odd){border-right:1px solid var(--border) !important}
+  .gauge-item:last-child,.gauge-item:nth-last-child(2):nth-child(odd){border-bottom:none !important}
+  .metas-row{flex-direction:column;gap:0}
+  .meta-big{border-right:none !important;border-bottom:1px solid var(--border)}
+  .meta-big:last-child{border-bottom:none}
+  .metas-hero{padding:24px 16px 28px}
+  .metas-hero-title{font-size:36px}
+  .heat-inner{gap:2px}
+  .heat-cell-sm{width:9px !important;height:9px !important}
+  table{font-size:11px}
+  th,td{padding:10px 10px !important}
+  .reg-head{padding:20px 16px}
+  .reg-body{padding:20px 16px !important}
+  .semana-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px;padding:0 16px}
+  .semana-grid-inner{display:flex;gap:10px;width:max-content}
+  .dia-card-mobile{width:90px;flex-shrink:0}
+}
+@media(max-width:480px){
+  .hero-name{font-size:30px}
+  .big-stat-val{font-size:28px}
+  .tipo-grid{grid-template-columns:repeat(3,1fr) !important}
+}
+
+.bottom-nav{
+  display:none;
+  position:fixed;bottom:0;left:0;right:0;
+  background:rgba(13,13,15,0.95);
+  backdrop-filter:blur(16px);
+  border-top:1px solid var(--border);
+  padding:8px 0 max(8px,env(safe-area-inset-bottom));
+  z-index:100;
+  grid-template-columns:repeat(4,1fr);
+}
+.bottom-nav-item{
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  padding:8px 4px;text-decoration:none;color:var(--muted);
+  transition:color 0.15s;cursor:pointer;
+}
+.bottom-nav-item.active{color:var(--accent)}
+.bottom-nav-icon{font-size:10px;font-weight:800;font-family:'Outfit',sans-serif;letter-spacing:0.06em;width:32px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:6px;background:rgba(255,255,255,0.05);margin-bottom:2px}
+.bottom-nav-item.active .bottom-nav-icon{background:var(--accent-dim);color:var(--accent)}
+.bottom-nav-label{font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;font-family:'Outfit',sans-serif}
 `;
 
 // ── ROTA / ────────────────────────────────────────────────────────────────────
@@ -361,9 +421,10 @@ app.get('/', async (req, res) => {
 .field-label{font-size:9px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-family:'Outfit',sans-serif}
 .tipo-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .tipo-btn{
-  border:1px solid var(--border);border-radius:8px;padding:14px 8px;
+  border:1px solid var(--border);border-radius:8px;padding:16px 8px;
   text-align:center;cursor:pointer;transition:all 0.15s;background:transparent;
-  display:flex;flex-direction:column;align-items:center;gap:5px;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  -webkit-tap-highlight-color:transparent;min-height:70px;justify-content:center;
 }
 .tipo-btn:hover{border-color:var(--border2);background:rgba(255,255,255,0.03)}
 .tipo-btn.selected{border-color:var(--accent);background:var(--accent-dim)}
@@ -371,13 +432,13 @@ app.get('/', async (req, res) => {
 .tipo-btn-nome{font-size:9px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted2);font-family:'Outfit',sans-serif}
 .tipo-btn.selected .tipo-btn-nome{color:var(--accent)}
 .humor-row{display:flex;gap:8px}
-.humor-btn{flex:1;border:1px solid var(--border);border-radius:8px;padding:12px 6px;text-align:center;cursor:pointer;font-size:20px;transition:all 0.15s;background:transparent}
+.humor-btn{flex:1;border:1px solid var(--border);border-radius:8px;padding:14px 6px;text-align:center;cursor:pointer;font-size:24px;transition:all 0.15s;background:transparent;-webkit-tap-highlight-color:transparent;min-height:56px}
 .humor-btn:hover{border-color:var(--border2);transform:scale(1.08)}
 .humor-btn.selected{border-color:var(--accent);background:var(--accent-dim)}
 .field-input{
-  width:100%;border:1px solid var(--border);border-radius:8px;padding:12px 14px;
-  font-size:13px;font-family:'DM Sans',sans-serif;background:var(--card2);color:var(--text);
-  outline:none;transition:border-color 0.15s;
+  width:100%;border:1px solid var(--border);border-radius:8px;padding:14px 16px;
+  font-size:16px;font-family:'DM Sans',sans-serif;background:var(--card2);color:var(--text);
+  outline:none;transition:border-color 0.15s;-webkit-appearance:none;
 }
 .field-input:focus{border-color:var(--accent)}
 .field-input::placeholder{color:var(--muted)}
@@ -385,9 +446,9 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
 .fields-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .btn-save{
   width:100%;background:var(--accent);color:#111;border:none;border-radius:8px;
-  padding:16px;font-family:'Outfit',sans-serif;font-size:13px;font-weight:900;
+  padding:18px;font-family:'Outfit',sans-serif;font-size:14px;font-weight:900;
   cursor:pointer;transition:opacity 0.15s;letter-spacing:0.1em;text-transform:uppercase;
-  margin-top:6px;
+  margin-top:6px;-webkit-tap-highlight-color:transparent;
 }
 .btn-save:hover{opacity:0.85}
 </style>
@@ -458,7 +519,9 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
 
     <div style="margin-bottom:40px" id="semana">
       <div class="section-label">Semana atual</div>
-      <div class="semana-grid">${semanaCells}</div>
+      <div class="semana-scroll">
+        <div class="semana-grid">${semanaCells}</div>
+      </div>
       <div class="prog-labels">
         <span>${feitasSemana} DE ${possiveisSemana} TREINOS</span>
         <span style="color:var(--accent)">${pctSemana}%</span>
@@ -584,6 +647,26 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
 </div>
 
 <div id="notif"></div>
+
+<div class="bottom-nav">
+  <a href="/" class="bottom-nav-item active">
+    <div class="bottom-nav-icon">DB</div>
+    <div class="bottom-nav-label">Home</div>
+  </a>
+  <a href="/metas" class="bottom-nav-item">
+    <div class="bottom-nav-icon">MT</div>
+    <div class="bottom-nav-label">Metas</div>
+  </a>
+  <a href="/historico" class="bottom-nav-item">
+    <div class="bottom-nav-icon">HT</div>
+    <div class="bottom-nav-label">Histórico</div>
+  </a>
+  <a href="#registro" class="bottom-nav-item">
+    <div class="bottom-nav-icon">+</div>
+    <div class="bottom-nav-label">Registrar</div>
+  </a>
+</div>
+
 <script>
 function selectTipo(el,val){
   document.querySelectorAll('.tipo-btn').forEach(b=>b.classList.remove('selected'));
@@ -787,14 +870,14 @@ app.get('/metas', async (req, res) => {
 
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:32px;margin-bottom:20px">
       <div class="section-label">Velocímetro de metas</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div class="gauge-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden">
         ${[
           {id:'g0', pct:pctTreinos,  val:m.treinosSemAtual+'', unit:'treinos', label:'SEMANA'},
           {id:'g1', pct:pctKm,       val:m.maiorKm.toFixed(1), unit:'km',      label:'CORRIDA'},
           {id:'g2', pct:pctStreakReal,val:streakAtual+'',       unit:'dias',    label:'STREAK'},
           {id:'g3', pct:pctMin,      val:m.minMes+'',          unit:'min',     label:'MINUTOS'},
         ].map((g,i)=>`
-        <div style="padding:32px 20px;text-align:center;${i<3?'border-right:1px solid var(--border)':''}">
+        <div class="gauge-item" style="padding:32px 20px;text-align:center;${i<3?'border-right:1px solid var(--border)':''}">
           <canvas id="${g.id}" width="180" height="100" style="width:180px;height:100px;max-width:100%"></canvas>
           <div style="font-family:'Outfit',sans-serif;font-size:32px;font-weight:900;color:${g.pct>=100?'var(--accent)':'var(--text)'};letter-spacing:-0.02em;line-height:1;margin-top:12px">${g.val}<span style="font-size:14px;color:var(--muted2);font-weight:600"> ${g.unit}</span></div>
           <div style="font-size:9px;font-weight:800;letter-spacing:0.16em;color:var(--muted);margin-top:6px;font-family:'Outfit',sans-serif">${g.label}</div>
@@ -839,6 +922,25 @@ app.get('/metas', async (req, res) => {
     </div>
 
   </div>
+</div>
+
+<div class="bottom-nav">
+  <a href="/" class="bottom-nav-item">
+    <div class="bottom-nav-icon">DB</div>
+    <div class="bottom-nav-label">Home</div>
+  </a>
+  <a href="/metas" class="bottom-nav-item active">
+    <div class="bottom-nav-icon">MT</div>
+    <div class="bottom-nav-label">Metas</div>
+  </a>
+  <a href="/historico" class="bottom-nav-item">
+    <div class="bottom-nav-icon">HT</div>
+    <div class="bottom-nav-label">Histórico</div>
+  </a>
+  <a href="/#registro" class="bottom-nav-item">
+    <div class="bottom-nav-icon">+</div>
+    <div class="bottom-nav-label">Registrar</div>
+  </a>
 </div>
 
 <script>
@@ -1127,6 +1229,24 @@ tr:hover td{background:rgba(255,255,255,0.015)}
       </table>
     </div>
   </div>
+</div>
+<div class="bottom-nav">
+  <a href="/" class="bottom-nav-item">
+    <div class="bottom-nav-icon">DB</div>
+    <div class="bottom-nav-label">Home</div>
+  </a>
+  <a href="/metas" class="bottom-nav-item">
+    <div class="bottom-nav-icon">MT</div>
+    <div class="bottom-nav-label">Metas</div>
+  </a>
+  <a href="/historico" class="bottom-nav-item active">
+    <div class="bottom-nav-icon">HT</div>
+    <div class="bottom-nav-label">Histórico</div>
+  </a>
+  <a href="/#registro" class="bottom-nav-item">
+    <div class="bottom-nav-icon">+</div>
+    <div class="bottom-nav-label">Registrar</div>
+  </a>
 </div>
 </body></html>`);
   } catch(e) {
