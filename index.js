@@ -83,6 +83,15 @@ function semanaAtual() {
   return { inicio: seg.toISOString().slice(0,10), fim: sab.toISOString().slice(0,10) };
 }
 
+function calcSemanaPlano(primeiroTreino) {
+  if (!primeiroTreino) return 1;
+  const inicio = new Date(primeiroTreino + 'T12:00:00');
+  const hoje = new Date();
+  const diffMs = hoje - inicio;
+  const diffSemanas = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
+  return Math.min(Math.max(diffSemanas + 1, 1), 8);
+}
+
 async function getDicaHoje() {
   const { rows } = await pool.query('SELECT texto, categoria FROM dicas ORDER BY id');
   if (!rows.length) return { texto:'Continue firme.', categoria:'geral' };
@@ -91,17 +100,19 @@ async function getDicaHoje() {
 
 async function getStats() {
   const semana = semanaAtual();
-  const [totalR, semanaR, streakR, corridaR] = await Promise.all([
+  const [totalR, semanaR, streakR, corridaR, primeiroR] = await Promise.all([
     pool.query('SELECT COUNT(*) FROM treinos WHERE concluido=true'),
     pool.query('SELECT * FROM treinos WHERE data>=$1 AND data<=$2 ORDER BY data ASC',[semana.inicio,semana.fim]),
     pool.query(`SELECT COUNT(DISTINCT data) as streak FROM treinos WHERE concluido=true AND data >= CURRENT_DATE - INTERVAL '30 days'`),
     pool.query(`SELECT DATE_TRUNC('week',data)::date as semana, SUM(distancia_km) as km FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido=true AND distancia_km IS NOT NULL GROUP BY semana ORDER BY semana ASC`),
+    pool.query(`SELECT MIN(data)::text as primeiro FROM treinos WHERE concluido=true`),
   ]);
   return {
     total:    parseInt(totalR.rows[0].count),
     semana:   semanaR.rows,
     streak:   parseInt(streakR.rows[0].streak)||0,
     corridas: corridaR.rows,
+    primeiro: primeiroR.rows[0]?.primeiro || null,
   };
 }
 
@@ -110,7 +121,7 @@ async function getMetas() {
   const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
   const semana = semanaAtual();
 
-  const [maiorR, minR, semTreinosR, corridaHistR, streakMesR, minMesR, heatR, planoR] = await Promise.all([
+  const [maiorR, minR, semTreinosR, corridaHistR, streakMesR, minMesR, heatR, planoR, _primeiroR] = await Promise.all([
     pool.query(`SELECT COALESCE(MAX(distancia_km),0) as max_km, COALESCE(AVG(distancia_km),0) as avg_km FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido=true AND distancia_km IS NOT NULL`),
     pool.query(`SELECT COALESCE(SUM(duracao_min),0) as min FROM treinos WHERE concluido=true AND data>=$1`,[inicioMes]),
     pool.query(`SELECT DATE_TRUNC('week',data)::date as semana, COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=CURRENT_DATE-INTERVAL '84 days' GROUP BY semana ORDER BY semana`),
@@ -118,7 +129,7 @@ async function getMetas() {
     pool.query(`SELECT DATE_TRUNC('month',data)::date as mes, COUNT(DISTINCT data) as dias FROM treinos WHERE concluido=true GROUP BY mes ORDER BY mes DESC LIMIT 6`),
     pool.query(`SELECT DATE_TRUNC('month',data)::date as mes, COALESCE(SUM(duracao_min),0) as min FROM treinos WHERE concluido=true AND data>=CURRENT_DATE-INTERVAL '180 days' GROUP BY mes ORDER BY mes`),
     pool.query(`SELECT data::text, COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=CURRENT_DATE-INTERVAL '180 days' GROUP BY data ORDER BY data`),
-    pool.query(`SELECT COUNT(DISTINCT DATE_TRUNC('week',data)) as semanas FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido=true`),
+    pool.query(`SELECT COUNT(DISTINCT DATE_TRUNC('week',data)) as semanas, MIN(data)::text as primeiro FROM treinos WHERE concluido=true`),
     pool.query(`SELECT COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=$1 AND data<=$2`,[semana.inicio,semana.fim]),
   ]);
 
@@ -264,7 +275,7 @@ app.get('/', async (req, res) => {
     const possiveisSemana = diasSemana.filter(d=>d.rotina?.tipo!=='Descanso').length;
     const pctSemana       = possiveisSemana>0?Math.round((feitasSemana/possiveisSemana)*100):0;
     const kmPorSemana     = stats.corridas.map(r=>({semana:r.semana,km:parseFloat(r.km||0).toFixed(1)}));
-    const semanaPlano     = Math.min(kmPorSemana.length+1,8);
+    const semanaPlano     = calcSemanaPlano(stats.primeiro);
 
     const horaAtual = hoje.getHours();
     const saudacao  = horaAtual<12?'BOM DIA':horaAtual<18?'BOA TARDE':'BOA NOITE';
