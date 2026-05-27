@@ -172,23 +172,23 @@ const SHARED_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:wght@400;500;700&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#111113;
-  --card:#1A1A1D;
-  --card2:#222226;
-  --border:rgba(255,255,255,0.07);
-  --border2:rgba(255,255,255,0.12);
-  --text:#FFFFFF;
-  --muted:#5A5A6A;
-  --muted2:#888899;
+  --bg:#0F1117;
+  --card:#1A1D27;
+  --card2:#21253200;
+  --border:rgba(255,255,255,0.09);
+  --border2:rgba(255,255,255,0.16);
+  --text:#F0F0F5;
+  --muted:#6A6A80;
+  --muted2:#9A9AB0;
   --accent:#D4FE45;
-  --accent-dim:rgba(212,254,69,0.12);
+  --accent-dim:rgba(212,254,69,0.13);
   --accent-mid:rgba(212,254,69,0.4);
   --r:14px;
 }
 body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
 
 .sidebar{
-  width:220px;min-height:100vh;background:#0D0D0F;
+  width:220px;min-height:100vh;background:#0C0E14;
   border-right:1px solid var(--border);
   padding:0;display:flex;flex-direction:column;flex-shrink:0;
   position:sticky;top:0;height:100vh;overflow-y:auto;
@@ -219,7 +219,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 
 .content{flex:1;min-width:0;display:flex;flex-direction:column;overflow-x:hidden}
 .topbar{
-  background:rgba(13,13,15,0.8);backdrop-filter:blur(12px);
+  background:rgba(12,14,20,0.88);backdrop-filter:blur(12px);
   border-bottom:1px solid var(--border);
   padding:16px 32px;display:flex;justify-content:space-between;align-items:center;
   position:sticky;top:0;z-index:10;
@@ -283,7 +283,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .bottom-nav{
   display:none;
   position:fixed;bottom:0;left:0;right:0;
-  background:rgba(13,13,15,0.95);
+  background:rgba(12,14,20,0.97);
   backdrop-filter:blur(16px);
   border-top:1px solid var(--border);
   padding:8px 0 max(8px,env(safe-area-inset-bottom));
@@ -399,7 +399,7 @@ app.get('/', async (req, res) => {
 .section-label{font-size:9px;font-weight:800;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:10px;font-family:'Outfit',sans-serif}
 .section-label::after{content:'';flex:1;height:1px;background:var(--border)}
 .semana-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:10px}
-.prog-track{background:var(--card2);border-radius:99px;height:3px;margin-top:16px;overflow:hidden}
+.prog-track{background:#21253280;border-radius:99px;height:3px;margin-top:16px;overflow:hidden}
 .prog-fill{height:100%;border-radius:99px;background:var(--accent);transition:width 0.8s}
 .prog-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);font-weight:700;margin-top:8px;letter-spacing:0.06em;font-family:'Outfit',sans-serif}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
@@ -437,7 +437,7 @@ app.get('/', async (req, res) => {
 .humor-btn.selected{border-color:var(--accent);background:var(--accent-dim)}
 .field-input{
   width:100%;border:1px solid var(--border);border-radius:8px;padding:14px 16px;
-  font-size:16px;font-family:'DM Sans',sans-serif;background:var(--card2);color:var(--text);
+  font-size:16px;font-family:'DM Sans',sans-serif;background:#21253280;color:var(--text);
   outline:none;transition:border-color 0.15s;-webkit-appearance:none;
 }
 .field-input:focus{border-color:var(--accent)}
@@ -574,7 +574,7 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
                 <div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px;font-family:'Outfit',sans-serif;letter-spacing:0.06em">
                   <span>${dt.getDate()}/${dt.getMonth()+1}</span><span style="color:var(--accent)">${k.km}km</span>
                 </div>
-                <div style="background:var(--card2);border-radius:2px;height:3px;overflow:hidden">
+                <div style="background:#21253280;border-radius:2px;height:3px;overflow:hidden">
                   <div style="height:100%;background:var(--accent);width:${pct}%;border-radius:2px"></div>
                 </div>
               </div>`;
@@ -774,7 +774,7 @@ app.get('/metas', async (req, res) => {
 .meta-big-pct sup{font-size:24px;color:var(--muted2)}
 .meta-big-label{font-size:9px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-top:8px;font-family:'Outfit',sans-serif}
 .meta-big-atual{font-size:12px;color:var(--muted2);margin-top:4px;font-weight:600}
-.meta-bar-mini{position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--card2)}
+.meta-bar-mini{position:absolute;bottom:0;left:0;right:0;height:3px;background:#21253280}
 .meta-bar-mini-fill{height:100%;background:var(--accent);transition:width 0.8s}
 .section-label{font-size:9px;font-weight:800;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:20px;display:flex;align-items:center;gap:10px;font-family:'Outfit',sans-serif}
 .section-label::after{content:'';flex:1;height:1px;background:var(--border)}
@@ -1167,7 +1167,7 @@ app.get('/historico', async (req, res) => {
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Histórico · Renato</title>
 <style>${SHARED_CSS}
-.field-input{border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--card2);color:var(--text);outline:none;transition:border-color 0.15s}
+.field-input{border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#21253280;color:var(--text);outline:none;transition:border-color 0.15s}
 .field-input:focus{border-color:var(--accent)}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 16px;font-size:9px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);font-family:'Outfit',sans-serif}
