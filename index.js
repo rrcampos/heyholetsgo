@@ -499,6 +499,7 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
       <a href="/?u=${usuario}" class="nav-item active"><span class="nav-icon">DB</span>Dashboard</a>
       <a href="/metas?u=${usuario}" class="nav-item"><span class="nav-icon">MT</span>Metas</a>
       <a href="/historico?u=${usuario}" class="nav-item"><span class="nav-icon">HT</span>Histórico</a>
+      <a href="/duelo" class="nav-item"><span class="nav-icon">⚔</span>Duelo</a>
     </div>
     <div class="nav-group">
       <div class="nav-label">Atividades</div>
@@ -859,6 +860,7 @@ app.get('/metas', async (req, res) => {
       <a href="/?u=${usuario}" class="nav-item"><span class="nav-icon">DB</span>Dashboard</a>
       <a href="/metas?u=${usuario}" class="nav-item active"><span class="nav-icon">MT</span>Metas</a>
       <a href="/historico?u=${usuario}" class="nav-item"><span class="nav-icon">HT</span>Histórico</a>
+      <a href="/duelo" class="nav-item"><span class="nav-icon">⚔</span>Duelo</a>
     </div>
     <div class="nav-group">
       <div class="nav-label">Atividades</div>
@@ -1248,6 +1250,7 @@ tr:hover td{background:rgba(255,255,255,0.015)}
       <a href="/?u=${usuario}" class="nav-item"><span class="nav-icon">DB</span>Dashboard</a>
       <a href="/metas?u=${usuario}" class="nav-item"><span class="nav-icon">MT</span>Metas</a>
       <a href="/historico?u=${usuario}" class="nav-item active"><span class="nav-icon">HT</span>Histórico</a>
+      <a href="/duelo" class="nav-item"><span class="nav-icon">⚔</span>Duelo</a>
     </div>
     <div class="nav-group">
       <div class="nav-label">Atividades</div>
@@ -1347,6 +1350,283 @@ app.post('/treino/edit', async (req, res) => {
     );
     res.redirect('/historico');
   } catch(e) { res.status(500).send(e.message); }
+});
+
+// ── ROTA /duelo ───────────────────────────────────────────────────────────────
+app.get('/duelo', async (req, res) => {
+  try {
+    const hoje = new Date();
+    const semana = semanaAtual();
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
+    const inicioAno = new Date(hoje.getFullYear(), 0, 1).toISOString().slice(0,10);
+
+    const queries = [
+      // Total geral
+      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true GROUP BY usuario`),
+      // Esta semana
+      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND data>=$1 AND data<=$2 GROUP BY usuario`,[semana.inicio,semana.fim]),
+      // Este mês
+      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND data>=$1 GROUP BY usuario`,[inicioMes]),
+      // Streak 30 dias
+      pool.query(`SELECT usuario, COUNT(DISTINCT data) as total FROM treinos WHERE concluido=true AND data>=CURRENT_DATE-INTERVAL '30 days' GROUP BY usuario`),
+      // Minutos totais
+      pool.query(`SELECT usuario, COALESCE(SUM(duracao_min),0) as total FROM treinos WHERE concluido=true GROUP BY usuario`),
+      // Minutos este mês
+      pool.query(`SELECT usuario, COALESCE(SUM(duracao_min),0) as total FROM treinos WHERE concluido=true AND data>=$1 GROUP BY usuario`,[inicioMes]),
+      // Beach tennis total
+      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND tipo ILIKE '%beach%' GROUP BY usuario`),
+      // Academia total
+      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND tipo ILIKE '%academia%' GROUP BY usuario`),
+      // Melhor semana (max treinos numa semana)
+      pool.query(`SELECT usuario, MAX(cnt) as total FROM (SELECT usuario, DATE_TRUNC('week',data) as sem, COUNT(*) as cnt FROM treinos WHERE concluido=true GROUP BY usuario,sem) t GROUP BY usuario`),
+      // Histórico semanal para gráfico (últimas 10 semanas)
+      pool.query(`SELECT usuario, DATE_TRUNC('week',data)::date as semana, COUNT(*) as cnt FROM treinos WHERE concluido=true AND data>=CURRENT_DATE-INTERVAL '70 days' GROUP BY usuario,semana ORDER BY semana`),
+      // Treinos por tipo
+      pool.query(`SELECT usuario, tipo, COUNT(*) as cnt FROM treinos WHERE concluido=true GROUP BY usuario,tipo ORDER BY usuario,cnt DESC`),
+    ];
+
+    const results = await Promise.all(queries);
+
+    function getPair(rows) {
+      const r = { renato: 0, silvia: 0 };
+      for (const row of rows) r[row.usuario] = parseInt(row.total||0);
+      return r;
+    }
+
+    const totalGeral  = getPair(results[0].rows);
+    const totalSemana = getPair(results[1].rows);
+    const totalMes    = getPair(results[2].rows);
+    const streak      = getPair(results[3].rows);
+    const minTotal    = getPair(results[4].rows);
+    const minMes      = getPair(results[5].rows);
+    const beach       = getPair(results[6].rows);
+    const academia    = getPair(results[7].rows);
+    const melhorSem   = getPair(results[8].rows);
+
+    // Histórico semanal para gráfico
+    const histRows = results[9].rows;
+    const semanas = [...new Set(histRows.map(r => r.semana.toString().slice(0,10)))].sort();
+    const histR = semanas.map(s => { const r = histRows.find(x => x.usuario==='renato' && x.semana.toString().slice(0,10)===s); return r ? parseInt(r.cnt) : 0; });
+    const histS = semanas.map(s => { const r = histRows.find(x => x.usuario==='silvia' && x.semana.toString().slice(0,10)===s); return r ? parseInt(r.cnt) : 0; });
+    const labSemanas = semanas.map(s => { const d = new Date(s+'T12:00:00'); return d.getDate()+'/'+(d.getMonth()+1); });
+
+    // Pontuação geral (quem ganhou mais categorias)
+    const cats = [totalGeral, totalSemana, totalMes, streak, minTotal, beach, academia, melhorSem];
+    let ptR = 0, ptS = 0;
+    for (const c of cats) {
+      if (c.renato > c.silvia) ptR++;
+      else if (c.silvia > c.renato) ptS++;
+    }
+
+    function winner(a, b) {
+      if (a > b) return 'renato';
+      if (b > a) return 'silvia';
+      return 'empate';
+    }
+
+    const cards = [
+      { label:'TOTAL GERAL',       r:totalGeral.renato,  s:totalGeral.silvia,  unit:'treinos', win:winner(totalGeral.renato,totalGeral.silvia) },
+      { label:'ESTA SEMANA',       r:totalSemana.renato, s:totalSemana.silvia, unit:'treinos', win:winner(totalSemana.renato,totalSemana.silvia) },
+      { label:'ESTE MÊS',          r:totalMes.renato,    s:totalMes.silvia,    unit:'treinos', win:winner(totalMes.renato,totalMes.silvia) },
+      { label:'STREAK 30 DIAS',    r:streak.renato,      s:streak.silvia,      unit:'dias',    win:winner(streak.renato,streak.silvia) },
+      { label:'MINUTOS TOTAL',     r:minTotal.renato,    s:minTotal.silvia,    unit:'min',     win:winner(minTotal.renato,minTotal.silvia) },
+      { label:'MINUTOS MÊS',       r:minMes.renato,      s:minMes.silvia,      unit:'min',     win:winner(minMes.renato,minMes.silvia) },
+      { label:'BEACH TENNIS',      r:beach.renato,       s:beach.silvia,       unit:'jogos',   win:winner(beach.renato,beach.silvia) },
+      { label:'ACADEMIA',          r:academia.renato,    s:academia.silvia,    unit:'treinos', win:winner(academia.renato,academia.silvia) },
+      { label:'MELHOR SEMANA',     r:melhorSem.renato,   s:melhorSem.silvia,   unit:'treinos', win:winner(melhorSem.renato,melhorSem.silvia) },
+    ];
+
+    const cardsHTML = cards.map(c => {
+      const isEmp = c.win === 'empate';
+      const rWin  = c.win === 'renato';
+      const sWin  = c.win === 'silvia';
+      const maxVal = Math.max(c.r, c.s, 1);
+      const pctR = Math.round((c.r / maxVal) * 100);
+      const pctS = Math.round((c.s / maxVal) * 100);
+      return `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:22px 24px">
+        <div style="font-size:9px;font-weight:800;letter-spacing:0.16em;color:var(--muted);margin-bottom:14px;font-family:'Outfit',sans-serif">${c.label}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px">
+          <div>
+            <div style="font-family:'Outfit',sans-serif;font-size:36px;font-weight:900;letter-spacing:-0.02em;color:${rWin?'var(--accent)':'var(--text)'};line-height:1">${c.r}</div>
+            <div style="font-size:9px;font-weight:800;color:${rWin?'var(--accent)':'var(--muted)'};letter-spacing:0.1em;margin-top:4px;font-family:'Outfit',sans-serif">RENATO ${rWin?'▲':''}</div>
+          </div>
+          <div style="font-size:22px;color:${isEmp?'var(--accent)':'var(--muted)'};font-weight:900;font-family:'Outfit',sans-serif">${isEmp?'=':'VS'}</div>
+          <div style="text-align:right">
+            <div style="font-family:'Outfit',sans-serif;font-size:36px;font-weight:900;letter-spacing:-0.02em;color:${sWin?'var(--accent)':'var(--text)'};line-height:1">${c.s}</div>
+            <div style="font-size:9px;font-weight:800;color:${sWin?'var(--accent)':'var(--muted)'};letter-spacing:0.1em;margin-top:4px;font-family:'Outfit',sans-serif">${sWin?'▲':''} SILVIA</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:3px;height:4px">
+          <div style="flex:${pctR};background:${rWin?'var(--accent)':'rgba(255,255,255,0.15)'};border-radius:2px 0 0 2px;transition:flex 0.6s"></div>
+          <div style="flex:${pctS};background:${sWin?'var(--accent)':'rgba(255,255,255,0.08)'};border-radius:0 2px 2px 0;transition:flex 0.6s"></div>
+        </div>
+        <div style="font-size:9px;color:var(--muted);margin-top:6px;font-weight:600;letter-spacing:0.06em">${c.unit}</div>
+      </div>`;
+    }).join('');
+
+    res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Duelo · RC vs SI</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>
+<style>${SHARED_CSS}
+.duelo-hero{padding:48px 32px 40px;border-bottom:1px solid var(--border)}
+.placar-row{display:flex;align-items:center;justify-content:space-between;gap:20px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:28px 32px}
+.placar-nome{font-family:'Outfit',sans-serif;font-size:13px;font-weight:800;letter-spacing:0.16em;color:var(--muted)}
+.placar-pts{font-family:'Outfit',sans-serif;font-size:72px;font-weight:900;letter-spacing:-0.04em;line-height:1}
+.placar-pts.lider{color:var(--accent)}
+.placar-vs{font-family:'Outfit',sans-serif;font-size:18px;font-weight:800;color:var(--muted);letter-spacing:0.12em;text-align:center}
+.placar-sub{font-size:10px;color:var(--muted);margin-top:6px;font-weight:600;letter-spacing:0.08em;font-family:'Outfit',sans-serif}
+.cards-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.section-label{font-size:9px;font-weight:800;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:10px;font-family:'Outfit',sans-serif}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border)}
+.chart-wrap{position:relative;height:200px}
+@media(max-width:860px){
+  .sidebar{display:none}
+  .main{padding:16px 16px 100px}
+  .bottom-nav{display:flex !important}
+  .cards-grid{grid-template-columns:1fr 1fr !important}
+  .placar-pts{font-size:52px}
+  .duelo-hero{padding:24px 16px 28px}
+}
+@media(max-width:480px){
+  .cards-grid{grid-template-columns:1fr !important}
+}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark"><div class="logo-dot"></div><div class="logo-text">TREINOS</div></div>
+    <div class="logo-sub">Renato & Silvia</div>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-group">
+      <div class="nav-label">Menu</div>
+      <a href="/" class="nav-item"><span class="nav-icon">DB</span>Dashboard</a>
+      <a href="/metas" class="nav-item"><span class="nav-icon">MT</span>Metas</a>
+      <a href="/historico" class="nav-item"><span class="nav-icon">HT</span>Histórico</a>
+      <a href="/duelo" class="nav-item active"><span class="nav-icon">⚔</span>Duelo</a>
+    </div>
+  </div>
+  <div class="sidebar-foot">
+    <div class="user-row">
+      <div class="user-av">RC</div>
+      <div><div class="user-name">vs</div><div class="user-loc">Silvia</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="topbar">
+    <div class="topbar-title">⚔ DUELO</div>
+    <div class="topbar-date">${new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase()}</div>
+  </div>
+
+  <div class="duelo-hero">
+    <div style="font-size:10px;font-weight:700;letter-spacing:0.2em;color:var(--muted);margin-bottom:12px;font-family:'Outfit',sans-serif">PLACAR GERAL</div>
+    <div class="placar-row">
+      <div style="text-align:left">
+        <div class="placar-nome">RENATO</div>
+        <div class="placar-pts ${ptR > ptS ? 'lider' : ''}">${ptR}</div>
+        <div class="placar-sub">${ptR > ptS ? '👑 LÍDER' : ptR === ptS ? 'EMPATADO' : 'ATRÁS'}</div>
+      </div>
+      <div class="placar-vs">
+        <div style="font-size:32px;margin-bottom:4px">⚔</div>
+        <div>${ptR === ptS ? 'EMPATE' : 'VS'}</div>
+        <div style="font-size:9px;margin-top:8px;color:var(--muted)">${cats.length} CATEGORIAS</div>
+      </div>
+      <div style="text-align:right">
+        <div class="placar-nome">SILVIA</div>
+        <div class="placar-pts ${ptS > ptR ? 'lider' : ''}">${ptS}</div>
+        <div class="placar-sub">${ptS > ptR ? '👑 LÍDER' : ptS === ptR ? 'EMPATADA' : 'ATRÁS'}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <div style="margin-bottom:28px">
+      <div class="section-label">Categorias</div>
+      <div class="cards-grid">${cardsHTML}</div>
+    </div>
+
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:28px;margin-bottom:20px">
+      <div class="section-label">Treinos por semana — últimas 10 semanas</div>
+      <div class="chart-wrap"><canvas id="chartDuelo"></canvas></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="bottom-nav" style="display:none">
+  <a href="/" class="bottom-nav-item">
+    <div class="bottom-nav-icon">DB</div>
+    <div class="bottom-nav-label">Home</div>
+  </a>
+  <a href="/metas" class="bottom-nav-item">
+    <div class="bottom-nav-icon">MT</div>
+    <div class="bottom-nav-label">Metas</div>
+  </a>
+  <a href="/duelo" class="bottom-nav-item active">
+    <div class="bottom-nav-icon">⚔</div>
+    <div class="bottom-nav-label">Duelo</div>
+  </a>
+  <a href="/historico" class="bottom-nav-item">
+    <div class="bottom-nav-icon">HT</div>
+    <div class="bottom-nav-label">Histórico</div>
+  </a>
+</div>
+
+<script>
+Chart.defaults.font.family="'DM Sans',system-ui,sans-serif";
+Chart.defaults.color='#6A6A80';
+
+new Chart(document.getElementById('chartDuelo'),{
+  type:'bar',
+  data:{
+    labels:${JSON.stringify(labSemanas.length?labSemanas:['—'])},
+    datasets:[
+      {
+        label:'Renato',
+        data:${JSON.stringify(histR.length?histR:[0])},
+        backgroundColor:'rgba(212,254,69,0.25)',
+        borderColor:'#D4FE45',
+        borderWidth:1.5,
+        borderRadius:4,
+      },
+      {
+        label:'Silvia',
+        data:${JSON.stringify(histS.length?histS:[0])},
+        backgroundColor:'rgba(255,255,255,0.08)',
+        borderColor:'rgba(255,255,255,0.3)',
+        borderWidth:1.5,
+        borderRadius:4,
+      }
+    ]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{
+      legend:{
+        display:true,
+        labels:{color:'#9A9AB0',font:{size:11},boxWidth:12,padding:20}
+      }
+    },
+    scales:{
+      x:{grid:{display:false},ticks:{font:{size:10}}},
+      y:{grid:{color:'rgba(255,255,255,0.04)'},beginAtZero:true,ticks:{stepSize:1,font:{size:10}}}
+    }
+  }
+});
+</script>
+</body></html>`);
+  } catch(e) {
+    console.error(e);
+    res.status(500).send('<pre style="padding:2rem;color:#fff;background:#111">'+e.message+'</pre>');
+  }
 });
 
 const PORT = process.env.PORT || 3000;
