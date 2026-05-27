@@ -269,7 +269,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 
 @media(max-width:860px){
   .sidebar{display:none}
-  .main{padding:16px 16px 100px}
+  .main{padding:16px 16px 130px}
   .bottom-nav{display:flex !important}
   .topbar{padding:12px 16px}
   .hero{padding:24px 16px 28px}
@@ -313,42 +313,40 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
   display:none;
   position:fixed;bottom:0;left:0;right:0;
   background:#0C0E14;
-  border-top:1px solid rgba(255,255,255,0.14);
-  padding:8px 8px max(16px,env(safe-area-inset-bottom));
+  border-top:2px solid rgba(255,255,255,0.12);
+  padding:10px 10px max(20px,env(safe-area-inset-bottom));
   z-index:100;
   grid-template-columns:repeat(4,1fr);
-  gap:4px;
+  gap:6px;
 }
 .bottom-nav-item{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
-  padding:12px 4px 10px;text-decoration:none;color:var(--muted2);
-  transition:all 0.15s;cursor:pointer;border-radius:12px;
-  border:1px solid transparent;min-height:64px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  padding:14px 6px 12px;text-decoration:none;color:var(--muted2);
+  transition:all 0.12s;cursor:pointer;border-radius:14px;
+  border:1.5px solid transparent;min-height:76px;
   -webkit-tap-highlight-color:transparent;
 }
 .bottom-nav-item.active{
   color:var(--accent);
-  background:var(--accent-dim);
-  border-color:rgba(212,254,69,0.25);
+  background:rgba(212,254,69,0.1);
+  border-color:rgba(212,254,69,0.3);
 }
 .bottom-nav-item:active{
-  transform:scale(0.94);
-  opacity:0.8;
+  transform:scale(0.92);
 }
 .bottom-nav-icon{
-  font-size:14px;font-weight:800;font-family:'Outfit',sans-serif;
-  letter-spacing:0.04em;width:44px;height:34px;
+  font-size:16px;font-weight:800;font-family:'Outfit',sans-serif;
+  letter-spacing:0.04em;width:52px;height:40px;
   display:flex;align-items:center;justify-content:center;
-  border-radius:10px;background:rgba(255,255,255,0.07);
-  transition:all 0.15s;
+  border-radius:12px;background:rgba(255,255,255,0.07);
+  transition:all 0.12s;
 }
 .bottom-nav-item.active .bottom-nav-icon{
-  background:rgba(212,254,69,0.18);
+  background:rgba(212,254,69,0.2);
   color:var(--accent);
-  width:48px;
 }
 .bottom-nav-label{
-  font-size:9.5px;font-weight:800;letter-spacing:0.08em;
+  font-size:11px;font-weight:800;letter-spacing:0.06em;
   text-transform:uppercase;font-family:'Outfit',sans-serif;
   line-height:1;
 }
@@ -1509,7 +1507,7 @@ app.get('/duelo', async (req, res) => {
 .chart-wrap{position:relative;height:200px}
 @media(max-width:860px){
   .sidebar{display:none}
-  .main{padding:16px 16px 100px}
+  .main{padding:16px 16px 130px}
   .bottom-nav{display:flex !important}
   .cards-grid{grid-template-columns:1fr 1fr !important}
   .placar-pts{font-size:52px}
