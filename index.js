@@ -1382,29 +1382,31 @@ app.get('/duelo', async (req, res) => {
     const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
     const inicioAno = new Date(hoje.getFullYear(), 0, 1).toISOString().slice(0,10);
 
+    // Treinos esperados por semana em cada rotina
+    const ESPERADO_SEMANA = { renato: 6, silvia: 6 };
+    // Dias corridos desde segunda desta semana até hoje (para calcular esperado parcial da semana)
+    const diasDecorridos = Math.min(Math.floor((new Date() - new Date(semana.inicio)) / 86400000) + 1, 7);
+    // Semanas completas desde início do mês
+    const diasMes = Math.floor((new Date() - new Date(inicioMes)) / 86400000) + 1;
+    const semanasMes = diasMes / 7;
+
     const queries = [
-      // Total geral
-      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true GROUP BY usuario`),
-      // Esta semana
+      // Feitos esta semana por usuario
       pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND data>=$1 AND data<=$2 GROUP BY usuario`,[semana.inicio,semana.fim]),
-      // Este mês
+      // Feitos este mês por usuario
       pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND data>=$1 GROUP BY usuario`,[inicioMes]),
       // Streak 30 dias
       pool.query(`SELECT usuario, COUNT(DISTINCT data) as total FROM treinos WHERE concluido=true AND data>=CURRENT_DATE-INTERVAL '30 days' GROUP BY usuario`),
-      // Minutos totais
-      pool.query(`SELECT usuario, COALESCE(SUM(duracao_min),0) as total FROM treinos WHERE concluido=true GROUP BY usuario`),
       // Minutos este mês
       pool.query(`SELECT usuario, COALESCE(SUM(duracao_min),0) as total FROM treinos WHERE concluido=true AND data>=$1 GROUP BY usuario`,[inicioMes]),
-      // Beach tennis total
-      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND tipo ILIKE '%beach%' GROUP BY usuario`),
-      // Academia total
-      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND tipo ILIKE '%academia%' GROUP BY usuario`),
-      // Melhor semana (max treinos numa semana)
-      pool.query(`SELECT usuario, MAX(cnt) as total FROM (SELECT usuario, DATE_TRUNC('week',data) as sem, COUNT(*) as cnt FROM treinos WHERE concluido=true GROUP BY usuario,sem) t GROUP BY usuario`),
-      // Histórico semanal para gráfico (últimas 10 semanas)
+      // Beach tennis este mês
+      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND tipo ILIKE '%beach%' AND data>=$1 GROUP BY usuario`,[inicioMes]),
+      // Academia este mês
+      pool.query(`SELECT usuario, COUNT(*) as total FROM treinos WHERE concluido=true AND tipo ILIKE '%academia%' AND data>=$1 GROUP BY usuario`,[inicioMes]),
+      // % por semana nas últimas 10 semanas (para histórico)
       pool.query(`SELECT usuario, DATE_TRUNC('week',data)::date as semana, COUNT(*) as cnt FROM treinos WHERE concluido=true AND data>=CURRENT_DATE-INTERVAL '70 days' GROUP BY usuario,semana ORDER BY semana`),
-      // Treinos por tipo
-      pool.query(`SELECT usuario, tipo, COUNT(*) as cnt FROM treinos WHERE concluido=true GROUP BY usuario,tipo ORDER BY usuario,cnt DESC`),
+      // Melhor % de cumprimento numa semana
+      pool.query(`SELECT usuario, MAX(cnt) as total FROM (SELECT usuario, DATE_TRUNC('week',data) as sem, COUNT(*) as cnt FROM treinos WHERE concluido=true GROUP BY usuario,sem) t GROUP BY usuario`),
     ];
 
     const results = await Promise.all(queries);
@@ -1415,30 +1417,48 @@ app.get('/duelo', async (req, res) => {
       return r;
     }
 
-    const totalGeral  = getPair(results[0].rows);
-    const totalSemana = getPair(results[1].rows);
-    const totalMes    = getPair(results[2].rows);
-    const streak      = getPair(results[3].rows);
-    const minTotal    = getPair(results[4].rows);
-    const minMes      = getPair(results[5].rows);
-    const beach       = getPair(results[6].rows);
-    const academia    = getPair(results[7].rows);
-    const melhorSem   = getPair(results[8].rows);
-
-    // Histórico semanal para gráfico
-    const histRows = results[9].rows;
-    const semanas = [...new Set(histRows.map(r => r.semana.toString().slice(0,10)))].sort();
-    const histR = semanas.map(s => { const r = histRows.find(x => x.usuario==='renato' && x.semana.toString().slice(0,10)===s); return r ? parseInt(r.cnt) : 0; });
-    const histS = semanas.map(s => { const r = histRows.find(x => x.usuario==='silvia' && x.semana.toString().slice(0,10)===s); return r ? parseInt(r.cnt) : 0; });
-    const labSemanas = semanas.map(s => { const d = new Date(s+'T12:00:00'); return d.getDate()+'/'+(d.getMonth()+1); });
-
-    // Pontuação geral (quem ganhou mais categorias)
-    const cats = [totalGeral, totalSemana, totalMes, streak, minTotal, beach, academia, melhorSem];
-    let ptR = 0, ptS = 0;
-    for (const c of cats) {
-      if (c.renato > c.silvia) ptR++;
-      else if (c.silvia > c.renato) ptS++;
+    // % de cumprimento = feitos / esperados * 100
+    // Esperado parcial da semana = (dias decorridos / 7) * treinos esperados/semana
+    function pctCumprimento(feitos, usuario, periodo) {
+      let esperado;
+      if (periodo === 'semana') esperado = (diasDecorridos / 7) * ESPERADO_SEMANA[usuario];
+      else if (periodo === 'mes') esperado = semanasMes * ESPERADO_SEMANA[usuario];
+      else if (periodo === '30d') esperado = (30 / 7) * ESPERADO_SEMANA[usuario];
+      else esperado = ESPERADO_SEMANA[usuario]; // semana cheia
+      return esperado > 0 ? Math.round((feitos / esperado) * 100) : 0;
     }
+
+    const feitosSemana = getPair(results[0].rows);
+    const feitosMes    = getPair(results[1].rows);
+    const streak       = getPair(results[2].rows);
+    const minMes       = getPair(results[3].rows);
+    const beachMes     = getPair(results[4].rows);
+    const academiaMes  = getPair(results[5].rows);
+    const melhorSem    = getPair(results[7].rows);
+
+    // Calcular % para cada categoria
+    const pctSemR = pctCumprimento(feitosSemana.renato, 'renato', 'semana');
+    const pctSemS = pctCumprimento(feitosSemana.silvia, 'silvia', 'semana');
+    const pctMesR = pctCumprimento(feitosMes.renato,    'renato', 'mes');
+    const pctMesS = pctCumprimento(feitosMes.silvia,    'silvia', 'mes');
+    const pct30R  = pctCumprimento(streak.renato,        'renato', '30d');
+    const pct30S  = pctCumprimento(streak.silvia,        'silvia', '30d');
+    // Melhor semana: % da semana com mais treinos em relação ao esperado
+    const pctMelhorR = Math.round((melhorSem.renato / ESPERADO_SEMANA.renato) * 100);
+    const pctMelhorS = Math.round((melhorSem.silvia / ESPERADO_SEMANA.silvia) * 100);
+
+    // Histórico semanal — converter para % de cumprimento
+    const histRows = results[6].rows;
+    const semanas = [...new Set(histRows.map(r => r.semana.toString().slice(0,10)))].sort();
+    const histR = semanas.map(s => {
+      const r = histRows.find(x => x.usuario==='renato' && x.semana.toString().slice(0,10)===s);
+      return r ? Math.min(Math.round((parseInt(r.cnt) / ESPERADO_SEMANA.renato) * 100), 100) : 0;
+    });
+    const histS = semanas.map(s => {
+      const r = histRows.find(x => x.usuario==='silvia' && x.semana.toString().slice(0,10)===s);
+      return r ? Math.min(Math.round((parseInt(r.cnt) / ESPERADO_SEMANA.silvia) * 100), 100) : 0;
+    });
+    const labSemanas = semanas.map(s => { const d = new Date(s+'T12:00:00'); return d.getDate()+'/'+(d.getMonth()+1); });
 
     function winner(a, b) {
       if (a > b) return 'renato';
@@ -1446,16 +1466,71 @@ app.get('/duelo', async (req, res) => {
       return 'empate';
     }
 
+    // Placar: quem venceu mais categorias de %
+    const catsPct = [
+      { r: pctSemR,    s: pctSemS    },
+      { r: pctMesR,    s: pctMesS    },
+      { r: pct30R,     s: pct30S     },
+      { r: pctMelhorR, s: pctMelhorS },
+      { r: minMes.renato > 0 ? 1 : 0, s: minMes.silvia > 0 ? 1 : 0 }, // quem registrou minutos
+    ];
+    let ptR = 0, ptS = 0;
+    for (const c of catsPct) {
+      if (c.r > c.s) ptR++;
+      else if (c.s > c.r) ptS++;
+    }
+
+    // Cards — mostrar % de cumprimento como valor principal, absoluto como subtexto
     const cards = [
-      { label:'TOTAL GERAL',       r:totalGeral.renato,  s:totalGeral.silvia,  unit:'treinos', win:winner(totalGeral.renato,totalGeral.silvia) },
-      { label:'ESTA SEMANA',       r:totalSemana.renato, s:totalSemana.silvia, unit:'treinos', win:winner(totalSemana.renato,totalSemana.silvia) },
-      { label:'ESTE MÊS',          r:totalMes.renato,    s:totalMes.silvia,    unit:'treinos', win:winner(totalMes.renato,totalMes.silvia) },
-      { label:'STREAK 30 DIAS',    r:streak.renato,      s:streak.silvia,      unit:'dias',    win:winner(streak.renato,streak.silvia) },
-      { label:'MINUTOS TOTAL',     r:minTotal.renato,    s:minTotal.silvia,    unit:'min',     win:winner(minTotal.renato,minTotal.silvia) },
-      { label:'MINUTOS MÊS',       r:minMes.renato,      s:minMes.silvia,      unit:'min',     win:winner(minMes.renato,minMes.silvia) },
-      { label:'BEACH TENNIS',      r:beach.renato,       s:beach.silvia,       unit:'jogos',   win:winner(beach.renato,beach.silvia) },
-      { label:'ACADEMIA',          r:academia.renato,    s:academia.silvia,    unit:'treinos', win:winner(academia.renato,academia.silvia) },
-      { label:'MELHOR SEMANA',     r:melhorSem.renato,   s:melhorSem.silvia,   unit:'treinos', win:winner(melhorSem.renato,melhorSem.silvia) },
+      {
+        label:'CUMPRIMENTO — SEMANA',
+        r: pctSemR, s: pctSemS,
+        subR: feitosSemana.renato+' treinos', subS: feitosSemana.silvia+' treinos',
+        unit:'%', win: winner(pctSemR, pctSemS),
+        tooltip:'% dos treinos esperados na semana feitos até hoje'
+      },
+      {
+        label:'CUMPRIMENTO — MÊS',
+        r: pctMesR, s: pctMesS,
+        subR: feitosMes.renato+' treinos', subS: feitosMes.silvia+' treinos',
+        unit:'%', win: winner(pctMesR, pctMesS),
+        tooltip:'% dos treinos esperados no mês feitos até hoje'
+      },
+      {
+        label:'CONSISTÊNCIA 30 DIAS',
+        r: pct30R, s: pct30S,
+        subR: streak.renato+' dias ativos', subS: streak.silvia+' dias ativos',
+        unit:'%', win: winner(pct30R, pct30S),
+        tooltip:'% de dias com treino nos últimos 30 dias vs. rotina esperada'
+      },
+      {
+        label:'MELHOR SEMANA',
+        r: pctMelhorR, s: pctMelhorS,
+        subR: melhorSem.renato+' treinos', subS: melhorSem.silvia+' treinos',
+        unit:'%', win: winner(pctMelhorR, pctMelhorS),
+        tooltip:'% da melhor semana já registrada em relação à rotina'
+      },
+      {
+        label:'MINUTOS NO MÊS',
+        r: minMes.renato, s: minMes.silvia,
+        subR: '', subS: '',
+        unit:'min', win: winner(minMes.renato, minMes.silvia),
+        tooltip:'Total de minutos de treino registrados este mês'
+      },
+      {
+        label:'BEACH TENNIS — MÊS',
+        r: beachMes.renato, s: beachMes.silvia,
+        subR: '', subS: '',
+        unit:'jogos', win: winner(beachMes.renato, beachMes.silvia),
+        tooltip:'Jogos de beach tennis concluídos este mês'
+      },
+      {
+        label:'ACADEMIA — MÊS',
+        r: academiaMes.renato, s: academiaMes.silvia,
+        subR: '', subS: '',
+        unit:'treinos', win: winner(academiaMes.renato, academiaMes.silvia),
+        tooltip:'Treinos de academia concluídos este mês'
+      },
     ];
 
     const cardsHTML = cards.map(c => {
@@ -1463,27 +1538,37 @@ app.get('/duelo', async (req, res) => {
       const rWin  = c.win === 'renato';
       const sWin  = c.win === 'silvia';
       const maxVal = Math.max(c.r, c.s, 1);
-      const pctR = Math.round((c.r / maxVal) * 100);
-      const pctS = Math.round((c.s / maxVal) * 100);
+      const barR = Math.round((c.r / maxVal) * 100);
+      const barS = Math.round((c.s / maxVal) * 100);
+      const isPercent = c.unit === '%';
       return `
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:22px 24px">
-        <div style="font-size:9px;font-weight:800;letter-spacing:0.16em;color:var(--muted);margin-bottom:14px;font-family:'Outfit',sans-serif">${c.label}</div>
-        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px 22px">
+        <div style="font-size:9px;font-weight:800;letter-spacing:0.14em;color:var(--muted);margin-bottom:12px;font-family:'Outfit',sans-serif;display:flex;justify-content:space-between;align-items:center">
+          <span>${c.label}</span>
+          ${c.tooltip?`<span style="font-size:8px;color:var(--muted);font-weight:600;letter-spacing:0.04em;opacity:0.6;max-width:120px;text-align:right;line-height:1.2">${c.tooltip}</span>`:''}
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px">
           <div>
-            <div style="font-family:'Outfit',sans-serif;font-size:36px;font-weight:900;letter-spacing:-0.02em;color:${rWin?'var(--accent)':'var(--text)'};line-height:1">${c.r}</div>
-            <div style="font-size:9px;font-weight:800;color:${rWin?'var(--accent)':'var(--muted)'};letter-spacing:0.1em;margin-top:4px;font-family:'Outfit',sans-serif">RENATO ${rWin?'▲':''}</div>
+            <div style="font-family:'Outfit',sans-serif;font-size:32px;font-weight:900;letter-spacing:-0.02em;color:${rWin?'var(--accent)':'var(--text)'};line-height:1">
+              ${c.r}${isPercent?'<span style="font-size:16px">%</span>':''}
+            </div>
+            ${c.subR?`<div style="font-size:9px;color:var(--muted);margin-top:3px;font-weight:600">${c.subR}</div>`:''}
+            <div style="font-size:9px;font-weight:800;color:${rWin?'var(--accent)':'var(--muted)'};letter-spacing:0.1em;margin-top:4px;font-family:'Outfit',sans-serif">RC ${rWin?'▲':''}</div>
           </div>
-          <div style="font-size:22px;color:${isEmp?'var(--accent)':'var(--muted)'};font-weight:900;font-family:'Outfit',sans-serif">${isEmp?'=':'VS'}</div>
+          <div style="font-size:18px;color:${isEmp?'var(--accent)':'var(--muted)'};font-weight:900;font-family:'Outfit',sans-serif;margin-bottom:4px">${isEmp?'=':'VS'}</div>
           <div style="text-align:right">
-            <div style="font-family:'Outfit',sans-serif;font-size:36px;font-weight:900;letter-spacing:-0.02em;color:${sWin?'var(--accent)':'var(--text)'};line-height:1">${c.s}</div>
-            <div style="font-size:9px;font-weight:800;color:${sWin?'var(--accent)':'var(--muted)'};letter-spacing:0.1em;margin-top:4px;font-family:'Outfit',sans-serif">${sWin?'▲':''} SILVIA</div>
+            <div style="font-family:'Outfit',sans-serif;font-size:32px;font-weight:900;letter-spacing:-0.02em;color:${sWin?'var(--accent)':'var(--text)'};line-height:1">
+              ${c.s}${isPercent?'<span style="font-size:16px">%</span>':''}
+            </div>
+            ${c.subS?`<div style="font-size:9px;color:var(--muted);margin-top:3px;font-weight:600">${c.subS}</div>`:''}
+            <div style="font-size:9px;font-weight:800;color:${sWin?'var(--accent)':'var(--muted)'};letter-spacing:0.1em;margin-top:4px;font-family:'Outfit',sans-serif">${sWin?'▲':''} SI</div>
           </div>
         </div>
-        <div style="display:flex;gap:3px;height:4px">
-          <div style="flex:${pctR};background:${rWin?'var(--accent)':'rgba(255,255,255,0.15)'};border-radius:2px 0 0 2px;transition:flex 0.6s"></div>
-          <div style="flex:${pctS};background:${sWin?'var(--accent)':'rgba(255,255,255,0.08)'};border-radius:0 2px 2px 0;transition:flex 0.6s"></div>
+        <div style="display:flex;gap:2px;height:3px">
+          <div style="flex:${barR};background:${rWin?'var(--accent)':'rgba(255,255,255,0.12)'};border-radius:2px 0 0 2px"></div>
+          <div style="flex:${barS};background:${sWin?'var(--accent)':'rgba(255,255,255,0.06)'};border-radius:0 2px 2px 0"></div>
         </div>
-        <div style="font-size:9px;color:var(--muted);margin-top:6px;font-weight:600;letter-spacing:0.06em">${c.unit}</div>
+        ${!isPercent?`<div style="font-size:9px;color:var(--muted);margin-top:5px;font-weight:600;letter-spacing:0.06em">${c.unit}</div>`:''}
       </div>`;
     }).join('');
 
@@ -1558,7 +1643,7 @@ app.get('/duelo', async (req, res) => {
       <div class="placar-vs">
         <div style="font-size:32px;margin-bottom:4px">⚔</div>
         <div>${ptR === ptS ? 'EMPATE' : 'VS'}</div>
-        <div style="font-size:9px;margin-top:8px;color:var(--muted)">${cats.length} CATEGORIAS</div>
+        <div style="font-size:9px;margin-top:8px;color:var(--muted)">7 CATEGORIAS</div>
       </div>
       <div style="text-align:right">
         <div class="placar-nome">SILVIA</div>
@@ -1576,7 +1661,7 @@ app.get('/duelo', async (req, res) => {
     </div>
 
     <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:28px;margin-bottom:20px">
-      <div class="section-label">Treinos por semana — últimas 10 semanas</div>
+      <div class="section-label">% de cumprimento da rotina — últimas 10 semanas</div>
       <div class="chart-wrap"><canvas id="chartDuelo"></canvas></div>
     </div>
 
@@ -1639,7 +1724,7 @@ new Chart(document.getElementById('chartDuelo'),{
     },
     scales:{
       x:{grid:{display:false},ticks:{font:{size:10}}},
-      y:{grid:{color:'rgba(255,255,255,0.04)'},beginAtZero:true,ticks:{stepSize:1,font:{size:10}}}
+      y:{grid:{color:'rgba(255,255,255,0.04)'},beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{size:10}}}
     }
   }
 });
