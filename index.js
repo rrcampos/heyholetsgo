@@ -1193,6 +1193,7 @@ app.get('/historico', async (req, res) => {
         <tr style="background:rgba(212,254,69,0.06);border-bottom:1px solid rgba(212,254,69,0.2)">
           <form method="POST" action="/treino/edit" style="display:contents">
             <input type="hidden" name="id" value="${t.id}">
+            <input type="hidden" name="redirect_u" value="${usuario}">
             <td style="padding:14px 16px;font-size:11px;color:var(--muted)">
               <input type="date" name="data" value="${ds}" class="field-input" style="width:150px;font-size:12px;padding:6px 10px">
             </td>
@@ -1238,9 +1239,10 @@ app.get('/historico', async (req, res) => {
         <td style="padding:14px 16px;font-size:11px;color:var(--muted)">${t.distancia_km?parseFloat(t.distancia_km).toFixed(1)+'km':'—'}</td>
         <td style="padding:14px 16px;font-size:11px;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.nota||'—'}</td>
         <td style="padding:14px 16px;white-space:nowrap">
-          <a href="/historico?edit=${t.id}" style="font-size:10px;font-weight:800;color:var(--muted2);text-decoration:none;letter-spacing:0.08em;font-family:'Outfit',sans-serif;margin-right:12px">EDITAR</a>
+          <a href="/historico?u=${usuario}&edit=${t.id}" style="font-size:10px;font-weight:800;color:var(--muted2);text-decoration:none;letter-spacing:0.08em;font-family:'Outfit',sans-serif;margin-right:12px">EDITAR</a>
           <form method="POST" action="/treino/delete" style="display:inline" onsubmit="return confirm('Deletar este treino?')">
             <input type="hidden" name="id" value="${t.id}">
+            <input type="hidden" name="redirect_u" value="${usuario}">
             <button type="submit" style="background:none;border:none;font-size:10px;font-weight:800;color:#EF4444;cursor:pointer;letter-spacing:0.08em;font-family:'Outfit',sans-serif;padding:0">DELETAR</button>
           </form>
         </td>
@@ -1308,6 +1310,7 @@ tr:hover td{background:rgba(255,255,255,0.015)}
       </div>
       ${rows.some(t=>t.data.slice(0,10)>hojeStr())?`
       <form method="POST" action="/treino/delete-futuros" onsubmit="return confirm('Deletar todos os treinos com data futura?')">
+          <input type="hidden" name="redirect_u" value="${usuario}">
         <button type="submit" style="background:rgba(239,68,68,0.12);color:#EF4444;border:1px solid rgba(239,68,68,0.25);border-radius:6px;padding:10px 18px;font-size:10px;font-weight:800;cursor:pointer;letter-spacing:0.1em;font-family:'Outfit',sans-serif">
           DELETAR TODOS OS FUTUROS
         </button>
@@ -1352,14 +1355,14 @@ app.post('/treino/delete', async (req, res) => {
   const { id } = req.body;
   try {
     await pool.query('DELETE FROM treinos WHERE id=$1', [parseInt(id)]);
-    res.redirect('/historico');
+    res.redirect('/historico?u='+(req.body.redirect_u||'renato'));
   } catch(e) { res.status(500).send(e.message); }
 });
 
 app.post('/treino/delete-futuros', async (req, res) => {
   try {
     await pool.query('DELETE FROM treinos WHERE data > CURRENT_DATE');
-    res.redirect('/historico');
+    res.redirect('/historico?u='+(req.body.redirect_u||'renato'));
   } catch(e) { res.status(500).send(e.message); }
 });
 
