@@ -21,6 +21,7 @@ async function initDB() {
       nota TEXT,
       duracao_min INT,
       distancia_km NUMERIC(5,2),
+      usuario VARCHAR(20) DEFAULT 'renato',
       created_at TIMESTAMP DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS dicas (
@@ -29,6 +30,7 @@ async function initDB() {
       categoria VARCHAR(50)
     );
   `);
+  await pool.query(`ALTER TABLE treinos ADD COLUMN IF NOT EXISTS usuario VARCHAR(20) DEFAULT 'renato'`);
   const { rows } = await pool.query('SELECT COUNT(*) FROM dicas');
   if (parseInt(rows[0].count) === 0) {
     const dicas = [
@@ -59,15 +61,38 @@ async function initDB() {
   console.log('Banco inicializado.');
 }
 
-const ROTINA = {
-  1: { tipo:'Corrida leve',      icone:'RUN',  horario:'17h', label:'CORRIDA'  },
-  2: { tipo:'Academia — sup. A', icone:'GYM',  horario:'11h', label:'ACADEMIA' },
-  3: { tipo:'Beach tennis',      icone:'BCH',  horario:'20h', label:'BEACH'    },
-  4: { tipo:'Academia — sup. B', icone:'GYM',  horario:'11h', label:'ACADEMIA' },
-  5: { tipo:'Corrida leve',      icone:'RUN',  horario:'10h', label:'CORRIDA'  },
-  6: { tipo:'Academia — inf.',   icone:'GYM',  horario:'9h',  label:'ACADEMIA' },
-  0: { tipo:'Descanso',          icone:'REST', horario:'—',   label:'DESCANSO' },
+const ROTINAS = {
+  renato: {
+    1: { tipo:'Corrida leve',      icone:'RUN',  horario:'17h', label:'CORRIDA',  local:''                },
+    2: { tipo:'Academia — sup. A', icone:'GYM',  horario:'11h', label:'ACADEMIA', local:''                },
+    3: { tipo:'Beach tennis',      icone:'BCH',  horario:'20h', label:'BEACH',    local:'São Francisco'   },
+    4: { tipo:'Academia — sup. B', icone:'GYM',  horario:'11h', label:'ACADEMIA', local:''                },
+    5: { tipo:'Corrida leve',      icone:'RUN',  horario:'10h', label:'CORRIDA',  local:'Itacoatiara'     },
+    6: { tipo:'Academia — inf.',   icone:'GYM',  horario:'9h',  label:'ACADEMIA', local:''                },
+    0: { tipo:'Descanso',          icone:'REST', horario:'—',   label:'DESCANSO', local:''                },
+  },
+  silvia: {
+    1: { tipo:'Academia — sup. A', icone:'GYM',  horario:'8h',  label:'ACADEMIA', local:''                },
+    2: [
+      { tipo:'Beach tennis',       icone:'BCH',  horario:'9h',  label:'BEACH',    local:'Clube'           },
+      { tipo:'Beach tennis',       icone:'BCH',  horario:'18h', label:'BEACH',    local:'Arena'           },
+    ],
+    3: { tipo:'Academia — sup. B', icone:'GYM',  horario:'9h',  label:'ACADEMIA', local:''                },
+    4: { tipo:'Beach tennis',      icone:'BCH',  horario:'9h',  label:'BEACH',    local:'Arena'           },
+    5: { tipo:'Academia — inf.',   icone:'GYM',  horario:'10h', label:'ACADEMIA', local:''                },
+    6: { tipo:'Descanso',          icone:'REST', horario:'—',   label:'DESCANSO', local:''                },
+    0: { tipo:'Descanso',          icone:'REST', horario:'—',   label:'DESCANSO', local:''                },
+  },
 };
+
+function getRotina(usuario, dow) {
+  return ROTINAS[usuario]?.[dow] || ROTINAS.renato[0];
+}
+
+function getRotinaList(usuario, dow) {
+  const r = getRotina(usuario, dow);
+  return Array.isArray(r) ? r : [r];
+}
 
 const DIAS_SHORT = ['DOM','SEG','TER','QUA','QUI','SEX','SÁB'];
 const MESES_PT   = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -98,14 +123,15 @@ async function getDicaHoje() {
   return rows[new Date().getDate() % rows.length];
 }
 
-async function getStats() {
+async function getStats(usuario='renato') {
   const semana = semanaAtual();
+  const u = usuario;
   const [totalR, semanaR, streakR, corridaR, primeiroR] = await Promise.all([
-    pool.query('SELECT COUNT(*) FROM treinos WHERE concluido=true'),
-    pool.query('SELECT * FROM treinos WHERE data>=$1 AND data<=$2 ORDER BY data ASC',[semana.inicio,semana.fim]),
-    pool.query(`SELECT COUNT(DISTINCT data) as streak FROM treinos WHERE concluido=true AND data >= CURRENT_DATE - INTERVAL '30 days'`),
-    pool.query(`SELECT DATE_TRUNC('week',data)::date as semana, SUM(distancia_km) as km FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido=true AND distancia_km IS NOT NULL GROUP BY semana ORDER BY semana ASC`),
-    pool.query(`SELECT MIN(data)::text as primeiro FROM treinos WHERE concluido=true`),
+    pool.query('SELECT COUNT(*) FROM treinos WHERE concluido=true AND usuario=$1',[u]),
+    pool.query('SELECT * FROM treinos WHERE data>=$1 AND data<=$2 AND usuario=$3 ORDER BY data ASC',[semana.inicio,semana.fim,u]),
+    pool.query(`SELECT COUNT(DISTINCT data) as streak FROM treinos WHERE concluido=true AND usuario=$1 AND data >= CURRENT_DATE - INTERVAL '30 days'`,[u]),
+    pool.query(`SELECT DATE_TRUNC('week',data)::date as semana, SUM(distancia_km) as km FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido=true AND distancia_km IS NOT NULL AND usuario=$1 GROUP BY semana ORDER BY semana ASC`,[u]),
+    pool.query(`SELECT MIN(data)::text as primeiro FROM treinos WHERE concluido=true AND usuario=$1`,[u]),
   ]);
   return {
     total:    parseInt(totalR.rows[0].count),
@@ -116,24 +142,24 @@ async function getStats() {
   };
 }
 
-async function getMetas() {
+async function getMetas(usuario='renato') {
   const hoje = new Date();
   const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
   const semana = semanaAtual();
 
   const [maiorR, minR, semTreinosR, corridaHistR, streakMesR, minMesR, heatR, planoR, _primeiroR] = await Promise.all([
-    pool.query(`SELECT COALESCE(MAX(distancia_km),0) as max_km, COALESCE(AVG(distancia_km),0) as avg_km FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido=true AND distancia_km IS NOT NULL`),
-    pool.query(`SELECT COALESCE(SUM(duracao_min),0) as min FROM treinos WHERE concluido=true AND data>=$1`,[inicioMes]),
-    pool.query(`SELECT DATE_TRUNC('week',data)::date as semana, COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=CURRENT_DATE-INTERVAL '84 days' GROUP BY semana ORDER BY semana`),
-    pool.query(`SELECT DATE_TRUNC('week',data)::date as semana, MAX(distancia_km) as max_km FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido=true AND distancia_km IS NOT NULL GROUP BY semana ORDER BY semana`),
-    pool.query(`SELECT DATE_TRUNC('month',data)::date as mes, COUNT(DISTINCT data) as dias FROM treinos WHERE concluido=true GROUP BY mes ORDER BY mes DESC LIMIT 6`),
-    pool.query(`SELECT DATE_TRUNC('month',data)::date as mes, COALESCE(SUM(duracao_min),0) as min FROM treinos WHERE concluido=true AND data>=CURRENT_DATE-INTERVAL '180 days' GROUP BY mes ORDER BY mes`),
-    pool.query(`SELECT data::text, COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=CURRENT_DATE-INTERVAL '180 days' GROUP BY data ORDER BY data`),
-    pool.query(`SELECT COUNT(DISTINCT DATE_TRUNC('week',data)) as semanas, MIN(data)::text as primeiro FROM treinos WHERE concluido=true`),
-    pool.query(`SELECT COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=$1 AND data<=$2`,[semana.inicio,semana.fim]),
+    pool.query(`SELECT COALESCE(MAX(distancia_km),0) as max_km, COALESCE(AVG(distancia_km),0) as avg_km FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido=true AND distancia_km IS NOT NULL AND usuario=$1`,[usuario]),
+    pool.query(`SELECT COALESCE(SUM(duracao_min),0) as min FROM treinos WHERE concluido=true AND data>=$1 AND usuario=$2`,[inicioMes,usuario]),
+    pool.query(`SELECT DATE_TRUNC('week',data)::date as semana, COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=CURRENT_DATE-INTERVAL '84 days' AND usuario=$1 GROUP BY semana ORDER BY semana`,[usuario]),
+    pool.query(`SELECT DATE_TRUNC('week',data)::date as semana, MAX(distancia_km) as max_km FROM treinos WHERE tipo ILIKE '%corrida%' AND concluido=true AND distancia_km IS NOT NULL AND usuario=$1 GROUP BY semana ORDER BY semana`,[usuario]),
+    pool.query(`SELECT DATE_TRUNC('month',data)::date as mes, COUNT(DISTINCT data) as dias FROM treinos WHERE concluido=true AND usuario=$1 GROUP BY mes ORDER BY mes DESC LIMIT 6`,[usuario]),
+    pool.query(`SELECT DATE_TRUNC('month',data)::date as mes, COALESCE(SUM(duracao_min),0) as min FROM treinos WHERE concluido=true AND data>=CURRENT_DATE-INTERVAL '180 days' AND usuario=$1 GROUP BY mes ORDER BY mes`,[usuario]),
+    pool.query(`SELECT data::text, COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=CURRENT_DATE-INTERVAL '180 days' AND usuario=$1 GROUP BY data ORDER BY data`,[usuario]),
+    pool.query(`SELECT COUNT(DISTINCT DATE_TRUNC('week',data)) as semanas, MIN(data)::text as primeiro FROM treinos WHERE concluido=true AND usuario=$1`,[usuario]),
+    pool.query(`SELECT COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=$1 AND data<=$2 AND usuario=$3`,[semana.inicio,semana.fim,usuario]),
   ]);
 
-  const semTreinosAtual = await pool.query(`SELECT COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=$1 AND data<=$2`,[semana.inicio,semana.fim]);
+  const semTreinosAtual = await pool.query(`SELECT COUNT(*) FILTER(WHERE concluido=true) as feitos FROM treinos WHERE data>=$1 AND data<=$2 AND usuario=$3`,[semana.inicio,semana.fim,usuario]);
 
   return {
     maiorKm: parseFloat(maiorR.rows[0].max_km||0),
@@ -149,20 +175,23 @@ async function getMetas() {
   };
 }
 
-async function getCalendario() {
+async function getCalendario(usuario='renato') {
   const hoje  = new Date();
   const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
   const fim    = new Date(hoje.getFullYear(), hoje.getMonth()+1, 0).toISOString().slice(0,10);
-  const { rows } = await pool.query('SELECT data::text, tipo, concluido FROM treinos WHERE data>=$1 AND data<=$2',[inicio,fim]);
+  const { rows } = await pool.query('SELECT data::text, tipo, concluido FROM treinos WHERE data>=$1 AND data<=$2 AND usuario=$3',[inicio,fim,usuario]);
   return rows;
 }
 
-function proximoTreino() {
+function proximoTreino(usuario='renato') {
   for (let i=0; i<=7; i++) {
     const d = new Date(); d.setDate(d.getDate()+i);
-    const r = ROTINA[d.getDay()];
-    if (r && r.tipo!=='Descanso')
-      return { ...r, data:d.toISOString().slice(0,10), dia:DIAS_SHORT[d.getDay()], daqui:i };
+    const dow = d.getDay();
+    const r = getRotina(usuario, dow);
+    const rList = Array.isArray(r) ? r : [r];
+    const first = rList[0];
+    if (first && first.tipo!=='Descanso')
+      return { ...first, data:d.toISOString().slice(0,10), dia:DIAS_SHORT[dow], daqui:i };
   }
   return null;
 }
@@ -304,8 +333,12 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 // ── ROTA / ────────────────────────────────────────────────────────────────────
 app.get('/', async (req, res) => {
   try {
-    const [stats, calendario, dica] = await Promise.all([getStats(), getCalendario(), getDicaHoje()]);
-    const proximo = proximoTreino();
+    const usuario = req.query.u === 'silvia' ? 'silvia' : 'renato';
+    const nomeExib = usuario === 'silvia' ? 'SILVIA' : 'RENATO';
+    const outroUser = usuario === 'silvia' ? 'renato' : 'silvia';
+    const outroNome = usuario === 'silvia' ? 'RENATO' : 'SILVIA';
+    const [stats, calendario, dica] = await Promise.all([getStats(usuario), getCalendario(usuario), getDicaHoje()]);
+    const proximo = proximoTreino(usuario);
     const hoje    = new Date();
     const hojeS   = hojeStr();
     const anoMes  = `${MESES_PT[hoje.getMonth()].toUpperCase()} ${hoje.getFullYear()}`;
@@ -328,7 +361,8 @@ app.get('/', async (req, res) => {
     for (let i=0; i<7; i++) {
       const d=new Date(semana.inicio); d.setDate(d.getDate()+i);
       const ds=d.toISOString().slice(0,10); const dow=d.getDay();
-      diasSemana.push({data:ds,dow,diaNome:DIAS_SHORT[dow],dia:d.getDate(),rotina:ROTINA[dow],treino:semMap[ds]||null,hoje:ds===hojeS});
+      const rotinaList = getRotinaList(usuario, dow);
+      diasSemana.push({data:ds,dow,diaNome:DIAS_SHORT[dow],dia:d.getDate(),rotina:rotinaList[0],rotinaList,treino:semMap[ds]||null,hoje:ds===hojeS});
     }
 
     const feitasSemana    = diasSemana.filter(d=>d.treino?.concluido).length;
@@ -462,9 +496,9 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
   <div class="sidebar-nav">
     <div class="nav-group">
       <div class="nav-label">Menu</div>
-      <a href="/" class="nav-item active"><span class="nav-icon">DB</span>Dashboard</a>
-      <a href="/metas" class="nav-item"><span class="nav-icon">MT</span>Metas</a>
-      <a href="/historico" class="nav-item"><span class="nav-icon">HT</span>Histórico</a>
+      <a href="/?u=${usuario}" class="nav-item active"><span class="nav-icon">DB</span>Dashboard</a>
+      <a href="/metas?u=${usuario}" class="nav-item"><span class="nav-icon">MT</span>Metas</a>
+      <a href="/historico?u=${usuario}" class="nav-item"><span class="nav-icon">HT</span>Histórico</a>
     </div>
     <div class="nav-group">
       <div class="nav-label">Atividades</div>
@@ -488,9 +522,20 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
   </div>
 
   <div class="hero">
-    <div class="hero-greeting">${saudacao}, RENATO</div>
-    <div class="hero-name">SEUS<br><span>TREINOS.</span></div>
-    <div class="hero-sub">Cada treino é uma escolha. Você escolheu bem.</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0">
+      <div>
+        <div class="hero-greeting">${saudacao}, ${nomeExib}</div>
+        <div class="hero-name">SEUS<br><span>TREINOS.</span></div>
+        <div class="hero-sub">Cada treino é uma escolha. Você escolheu bem.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;margin-top:4px">
+        <div style="display:flex;border:1px solid var(--border2);border-radius:8px;overflow:hidden">
+          <a href="/?u=renato" style="padding:8px 16px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-decoration:none;font-family:'Outfit',sans-serif;transition:all 0.15s;${usuario==='renato'?'background:var(--accent);color:#111':'color:var(--muted2)'}">RC</a>
+          <a href="/?u=silvia" style="padding:8px 16px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-decoration:none;font-family:'Outfit',sans-serif;transition:all 0.15s;border-left:1px solid var(--border2);${usuario==='silvia'?'background:var(--accent);color:#111':'color:var(--muted2)'}">SI</a>
+        </div>
+        <a href="/?u=${outroUser}" style="font-size:10px;color:var(--muted);text-decoration:none;font-weight:700;letter-spacing:0.08em;font-family:'Outfit',sans-serif">VER ${outroNome} →</a>
+      </div>
+    </div>
     <div class="big-stats">
       <div class="big-stat">
         <div class="big-stat-val accent">${stats.streak}</div>
@@ -596,6 +641,8 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
           <form method="POST" action="/treino" id="formTreino">
             <input type="hidden" name="concluido" value="true">
             <input type="hidden" name="tipo" id="tipoHidden">
+            <input type="hidden" name="usuario" value="${usuario}">
+            <input type="hidden" name="redirect_u" value="${usuario}">
             <div style="margin-bottom:20px">
               <div class="field-label">Qual treino?</div>
               <div class="tipo-grid">
@@ -649,15 +696,15 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
 <div id="notif"></div>
 
 <div class="bottom-nav">
-  <a href="/" class="bottom-nav-item active">
+  <a href="/?u=${usuario}" class="bottom-nav-item active">
     <div class="bottom-nav-icon">DB</div>
     <div class="bottom-nav-label">Home</div>
   </a>
-  <a href="/metas" class="bottom-nav-item">
+  <a href="/metas?u=${usuario}" class="bottom-nav-item">
     <div class="bottom-nav-icon">MT</div>
     <div class="bottom-nav-label">Metas</div>
   </a>
-  <a href="/historico" class="bottom-nav-item">
+  <a href="/historico?u=${usuario}" class="bottom-nav-item">
     <div class="bottom-nav-icon">HT</div>
     <div class="bottom-nav-label">Histórico</div>
   </a>
@@ -680,8 +727,9 @@ function selectHumor(el,val){
   const cur=nota.value.replace(/^\[.*?\]\s*/,'');
   nota.value='['+val+'] '+cur;
 }
+const USUARIO_ATIVO = '${usuario}';
 function toggleTreino(data,tipo){
-  fetch('/treino/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data,tipo})})
+  fetch('/treino/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data,tipo,usuario:USUARIO_ATIVO})})
   .then(r=>r.json()).then(res=>{
     showNotif(res.concluido?'TREINO CONCLUÍDO ✓':'TREINO DESMARCADO');
     setTimeout(()=>location.reload(),800);
@@ -708,7 +756,11 @@ document.getElementById('formTreino').addEventListener('submit',function(e){
 // ── ROTA /metas ───────────────────────────────────────────────────────────────
 app.get('/metas', async (req, res) => {
   try {
-    const m = await getMetas();
+    const usuario = req.query.u === 'silvia' ? 'silvia' : 'renato';
+    const nomeExib = usuario === 'silvia' ? 'SILVIA' : 'RENATO';
+    const outroUser = usuario === 'silvia' ? 'renato' : 'silvia';
+    const outroNome = usuario === 'silvia' ? 'RENATO' : 'SILVIA';
+    const m = await getMetas(usuario);
     const hoje = new Date();
 
     const pctTreinos  = Math.min(Math.round((m.treinosSemAtual/5)*100),100);
@@ -717,7 +769,7 @@ app.get('/metas', async (req, res) => {
     const pctMin      = Math.min(Math.round((m.minMes/600)*100),100);
 
     // Streak atual
-    const { rows: sRows } = await pool.query(`SELECT COUNT(DISTINCT data) as s FROM treinos WHERE concluido=true AND data>=CURRENT_DATE-INTERVAL '30 days'`);
+    const { rows: sRows } = await pool.query(`SELECT COUNT(DISTINCT data) as s FROM treinos WHERE concluido=true AND usuario=$1 AND data>=CURRENT_DATE-INTERVAL '30 days'`,[usuario]);
     const streakAtual = parseInt(sRows[0].s||0);
     const pctStreakReal = Math.min(Math.round((streakAtual/20)*100),100);
 
@@ -804,9 +856,9 @@ app.get('/metas', async (req, res) => {
   <div class="sidebar-nav">
     <div class="nav-group">
       <div class="nav-label">Menu</div>
-      <a href="/" class="nav-item"><span class="nav-icon">DB</span>Dashboard</a>
-      <a href="/metas" class="nav-item active"><span class="nav-icon">MT</span>Metas</a>
-      <a href="/historico" class="nav-item"><span class="nav-icon">HT</span>Histórico</a>
+      <a href="/?u=${usuario}" class="nav-item"><span class="nav-icon">DB</span>Dashboard</a>
+      <a href="/metas?u=${usuario}" class="nav-item active"><span class="nav-icon">MT</span>Metas</a>
+      <a href="/historico?u=${usuario}" class="nav-item"><span class="nav-icon">HT</span>Histórico</a>
     </div>
     <div class="nav-group">
       <div class="nav-label">Atividades</div>
@@ -825,8 +877,14 @@ app.get('/metas', async (req, res) => {
 
 <div class="content">
   <div class="topbar">
-    <div class="topbar-title">Metas</div>
-    <div class="topbar-date">${new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase()}</div>
+    <div class="topbar-title">METAS · ${nomeExib}</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="display:flex;border:1px solid var(--border2);border-radius:6px;overflow:hidden">
+        <a href="/metas?u=renato" style="padding:6px 12px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-decoration:none;font-family:'Outfit',sans-serif;${usuario==='renato'?'background:var(--accent);color:#111':'color:var(--muted2)'}">RC</a>
+        <a href="/metas?u=silvia" style="padding:6px 12px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-decoration:none;font-family:'Outfit',sans-serif;border-left:1px solid var(--border2);${usuario==='silvia'?'background:var(--accent);color:#111':'color:var(--muted2)'}">SI</a>
+      </div>
+      <div class="topbar-date">${new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase()}</div>
+    </div>
   </div>
 
   <div class="metas-hero">
@@ -925,15 +983,15 @@ app.get('/metas', async (req, res) => {
 </div>
 
 <div class="bottom-nav">
-  <a href="/" class="bottom-nav-item">
+  <a href="/?u=${usuario}" class="bottom-nav-item">
     <div class="bottom-nav-icon">DB</div>
     <div class="bottom-nav-label">Home</div>
   </a>
-  <a href="/metas" class="bottom-nav-item active">
+  <a href="/metas?u=${usuario}" class="bottom-nav-item active">
     <div class="bottom-nav-icon">MT</div>
     <div class="bottom-nav-label">Metas</div>
   </a>
-  <a href="/historico" class="bottom-nav-item">
+  <a href="/historico?u=${usuario}" class="bottom-nav-item">
     <div class="bottom-nav-icon">HT</div>
     <div class="bottom-nav-label">Histórico</div>
   </a>
@@ -1058,29 +1116,29 @@ new Chart(document.getElementById('cStreak'),{type:'line',data:{
 
 // ── TOGGLES E POSTS ──────────────────────────────────────────────────────────
 app.post('/treino', async (req, res) => {
-  const { data, tipo, concluido, nota, duracao_min, distancia_km } = req.body;
+  const { data, tipo, concluido, nota, duracao_min, distancia_km, usuario='renato', redirect_u='renato' } = req.body;
   try {
-    const ex = await pool.query('SELECT id FROM treinos WHERE data=$1 AND tipo=$2',[data,tipo]);
+    const ex = await pool.query('SELECT id FROM treinos WHERE data=$1 AND tipo=$2 AND usuario=$3',[data,tipo,usuario]);
     if(ex.rows.length)
       await pool.query('UPDATE treinos SET concluido=$1,nota=$2,duracao_min=$3,distancia_km=$4 WHERE id=$5',
         [concluido==='true',nota||null,duracao_min||null,distancia_km||null,ex.rows[0].id]);
     else
-      await pool.query('INSERT INTO treinos (data,tipo,concluido,nota,duracao_min,distancia_km) VALUES ($1,$2,$3,$4,$5,$6)',
-        [data,tipo,concluido==='true',nota||null,duracao_min||null,distancia_km||null]);
-    res.redirect('/');
+      await pool.query('INSERT INTO treinos (data,tipo,concluido,nota,duracao_min,distancia_km,usuario) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [data,tipo,concluido==='true',nota||null,duracao_min||null,distancia_km||null,usuario]);
+    res.redirect('/?u='+redirect_u);
   } catch(e){res.status(500).send(e.message);}
 });
 
 app.post('/treino/toggle', async (req, res) => {
-  const { data, tipo } = req.body;
+  const { data, tipo, usuario='renato' } = req.body;
   try {
-    const ex = await pool.query('SELECT id,concluido FROM treinos WHERE data=$1 AND tipo=$2',[data,tipo]);
+    const ex = await pool.query('SELECT id,concluido FROM treinos WHERE data=$1 AND tipo=$2 AND usuario=$3',[data,tipo,usuario]);
     if(ex.rows.length){
       const novo=!ex.rows[0].concluido;
       await pool.query('UPDATE treinos SET concluido=$1 WHERE id=$2',[novo,ex.rows[0].id]);
       res.json({ok:true,concluido:novo});
     } else {
-      await pool.query('INSERT INTO treinos (data,tipo,concluido) VALUES ($1,$2,true)',[data,tipo]);
+      await pool.query('INSERT INTO treinos (data,tipo,concluido,usuario) VALUES ($1,$2,true,$3)',[data,tipo,usuario]);
       res.json({ok:true,concluido:true});
     }
   } catch(e){res.status(500).json({erro:e.message});}
@@ -1089,10 +1147,14 @@ app.post('/treino/toggle', async (req, res) => {
 // ── ROTA /historico ───────────────────────────────────────────────────────────
 app.get('/historico', async (req, res) => {
   try {
+    const usuario = req.query.u === 'silvia' ? 'silvia' : 'renato';
+    const nomeExib = usuario === 'silvia' ? 'SILVIA' : 'RENATO';
+    const outroUser = usuario === 'silvia' ? 'renato' : 'silvia';
+    const outroNome = usuario === 'silvia' ? 'RENATO' : 'SILVIA';
     const { rows } = await pool.query(`
       SELECT id, data::text, tipo, concluido, nota, duracao_min, distancia_km
-      FROM treinos ORDER BY data DESC, id DESC LIMIT 100
-    `);
+      FROM treinos WHERE usuario=$1 ORDER BY data DESC, id DESC LIMIT 100
+    `,[usuario]);
 
     const editId = req.query.edit ? parseInt(req.query.edit) : null;
 
@@ -1183,9 +1245,9 @@ tr:hover td{background:rgba(255,255,255,0.015)}
   <div class="sidebar-nav">
     <div class="nav-group">
       <div class="nav-label">Menu</div>
-      <a href="/" class="nav-item"><span class="nav-icon">DB</span>Dashboard</a>
-      <a href="/metas" class="nav-item"><span class="nav-icon">MT</span>Metas</a>
-      <a href="/historico" class="nav-item active"><span class="nav-icon">HT</span>Histórico</a>
+      <a href="/?u=${usuario}" class="nav-item"><span class="nav-icon">DB</span>Dashboard</a>
+      <a href="/metas?u=${usuario}" class="nav-item"><span class="nav-icon">MT</span>Metas</a>
+      <a href="/historico?u=${usuario}" class="nav-item active"><span class="nav-icon">HT</span>Histórico</a>
     </div>
     <div class="nav-group">
       <div class="nav-label">Atividades</div>
@@ -1204,8 +1266,14 @@ tr:hover td{background:rgba(255,255,255,0.015)}
 
 <div class="content">
   <div class="topbar">
-    <div class="topbar-title">Histórico</div>
-    <div class="topbar-date">${new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase()}</div>
+    <div class="topbar-title">HISTÓRICO · ${nomeExib}</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="display:flex;border:1px solid var(--border2);border-radius:6px;overflow:hidden">
+        <a href="/historico?u=renato" style="padding:6px 12px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-decoration:none;font-family:'Outfit',sans-serif;${usuario==='renato'?'background:var(--accent);color:#111':'color:var(--muted2)'}">RC</a>
+        <a href="/historico?u=silvia" style="padding:6px 12px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-decoration:none;font-family:'Outfit',sans-serif;border-left:1px solid var(--border2);${usuario==='silvia'?'background:var(--accent);color:#111':'color:var(--muted2)'}">SI</a>
+      </div>
+      <div class="topbar-date">${new Date().toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase()}</div>
+    </div>
   </div>
   <div class="main">
     <div style="margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-end">
@@ -1231,15 +1299,15 @@ tr:hover td{background:rgba(255,255,255,0.015)}
   </div>
 </div>
 <div class="bottom-nav">
-  <a href="/" class="bottom-nav-item">
+  <a href="/?u=${usuario}" class="bottom-nav-item">
     <div class="bottom-nav-icon">DB</div>
     <div class="bottom-nav-label">Home</div>
   </a>
-  <a href="/metas" class="bottom-nav-item">
+  <a href="/metas?u=${usuario}" class="bottom-nav-item">
     <div class="bottom-nav-icon">MT</div>
     <div class="bottom-nav-label">Metas</div>
   </a>
-  <a href="/historico" class="bottom-nav-item active">
+  <a href="/historico?u=${usuario}" class="bottom-nav-item active">
     <div class="bottom-nav-icon">HT</div>
     <div class="bottom-nav-label">Histórico</div>
   </a>
