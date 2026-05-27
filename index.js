@@ -312,22 +312,38 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .bottom-nav{
   display:none;
   position:fixed;bottom:0;left:0;right:0;
-  background:rgba(12,14,20,0.97);
-  backdrop-filter:blur(16px);
-  border-top:1px solid var(--border);
-  padding:8px 0 max(8px,env(safe-area-inset-bottom));
+  background:#0C0E14;
+  border-top:1px solid rgba(255,255,255,0.14);
+  padding:10px 12px max(14px,env(safe-area-inset-bottom));
   z-index:100;
   grid-template-columns:repeat(4,1fr);
+  gap:6px;
 }
 .bottom-nav-item{
-  display:flex;flex-direction:column;align-items:center;gap:4px;
-  padding:8px 4px;text-decoration:none;color:var(--muted);
-  transition:color 0.15s;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  padding:10px 4px 8px;text-decoration:none;color:var(--muted2);
+  transition:all 0.15s;cursor:pointer;border-radius:10px;
+  border:1px solid transparent;
 }
-.bottom-nav-item.active{color:var(--accent)}
-.bottom-nav-icon{font-size:10px;font-weight:800;font-family:'Outfit',sans-serif;letter-spacing:0.06em;width:32px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:6px;background:rgba(255,255,255,0.05);margin-bottom:2px}
-.bottom-nav-item.active .bottom-nav-icon{background:var(--accent-dim);color:var(--accent)}
-.bottom-nav-label{font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;font-family:'Outfit',sans-serif}
+.bottom-nav-item.active{
+  color:var(--accent);
+  background:var(--accent-dim);
+  border-color:rgba(212,254,69,0.2);
+}
+.bottom-nav-icon{
+  font-size:12px;font-weight:800;font-family:'Outfit',sans-serif;
+  letter-spacing:0.06em;width:36px;height:28px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:8px;background:rgba(255,255,255,0.06);
+}
+.bottom-nav-item.active .bottom-nav-icon{
+  background:rgba(212,254,69,0.15);
+  color:var(--accent);
+}
+.bottom-nav-label{
+  font-size:9px;font-weight:800;letter-spacing:0.1em;
+  text-transform:uppercase;font-family:'Outfit',sans-serif;
+}
 `;
 
 // ── ROTA / ────────────────────────────────────────────────────────────────────
@@ -705,9 +721,9 @@ textarea.field-input{resize:vertical;min-height:90px;line-height:1.5}
     <div class="bottom-nav-icon">MT</div>
     <div class="bottom-nav-label">Metas</div>
   </a>
-  <a href="/historico?u=${usuario}" class="bottom-nav-item">
-    <div class="bottom-nav-icon">HT</div>
-    <div class="bottom-nav-label">Histórico</div>
+  <a href="/duelo" class="bottom-nav-item">
+    <div class="bottom-nav-icon">⚔</div>
+    <div class="bottom-nav-label">Duelo</div>
   </a>
   <a href="#registro" class="bottom-nav-item">
     <div class="bottom-nav-icon">+</div>
@@ -993,11 +1009,11 @@ app.get('/metas', async (req, res) => {
     <div class="bottom-nav-icon">MT</div>
     <div class="bottom-nav-label">Metas</div>
   </a>
-  <a href="/historico?u=${usuario}" class="bottom-nav-item">
-    <div class="bottom-nav-icon">HT</div>
-    <div class="bottom-nav-label">Histórico</div>
+  <a href="/duelo" class="bottom-nav-item">
+    <div class="bottom-nav-icon">⚔</div>
+    <div class="bottom-nav-label">Duelo</div>
   </a>
-  <a href="/#registro" class="bottom-nav-item">
+  <a href="/?u=${usuario}#registro" class="bottom-nav-item">
     <div class="bottom-nav-icon">+</div>
     <div class="bottom-nav-label">Registrar</div>
   </a>
@@ -1310,11 +1326,11 @@ tr:hover td{background:rgba(255,255,255,0.015)}
     <div class="bottom-nav-icon">MT</div>
     <div class="bottom-nav-label">Metas</div>
   </a>
-  <a href="/historico?u=${usuario}" class="bottom-nav-item active">
-    <div class="bottom-nav-icon">HT</div>
-    <div class="bottom-nav-label">Histórico</div>
+  <a href="/duelo" class="bottom-nav-item">
+    <div class="bottom-nav-icon">⚔</div>
+    <div class="bottom-nav-label">Duelo</div>
   </a>
-  <a href="/#registro" class="bottom-nav-item">
+  <a href="/?u=${usuario}#registro" class="bottom-nav-item">
     <div class="bottom-nav-icon">+</div>
     <div class="bottom-nav-label">Registrar</div>
   </a>
@@ -1574,9 +1590,9 @@ app.get('/duelo', async (req, res) => {
     <div class="bottom-nav-icon">⚔</div>
     <div class="bottom-nav-label">Duelo</div>
   </a>
-  <a href="/historico" class="bottom-nav-item">
-    <div class="bottom-nav-icon">HT</div>
-    <div class="bottom-nav-label">Histórico</div>
+  <a href="/#registro" class="bottom-nav-item">
+    <div class="bottom-nav-icon">+</div>
+    <div class="bottom-nav-label">Registrar</div>
   </a>
 </div>
 
